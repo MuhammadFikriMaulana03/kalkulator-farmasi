@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef } from 'react';
 
 // --- BAGIAN RUMUS ---
 const hitungDosisYoung = (umur: number, dosisDewasa: number): number => (umur / (umur + 12)) * dosisDewasa;
@@ -80,11 +80,8 @@ export default function KalkulatorFarmasi() {
   const [waktuInfus, setWaktuInfus] = useState<string>('');
   const [faktorTetes, setFaktorTetes] = useState<string>('20');
 
-  const [hasil, setHasil] = useState<number | null>(null);
-  const [satuanHasil, setSatuanHasil] = useState<string>('mg');
-  const [warningDosis, setWarningDosis] = useState<string | null>(null); // State Peringatan Dosis
-  const [error, setError] = useState<string>('');
   const [riwayat, setRiwayat] = useState<RiwayatItem[]>([]);
+  const lastSavedSignature = useRef<string>('');
 
   const [soalQuiz, setSoalQuiz] = useState<SoalQuiz | null>(null);
   const [jawabanUser, setJawabanUser] = useState<string>('');
@@ -112,17 +109,11 @@ export default function KalkulatorFarmasi() {
 
   const handleTabChange = (tab: TabType) => {
     setActiveTab(tab);
-    setHasil(null);
-    setError('');
-    setWarningDosis(null);
     if (tab === 'quiz' && !soalQuiz) generateSoalQuiz();
   };
 
   const handlePilihObat = (idObat: string) => {
     setPilihanObat(idObat);
-    setHasil(null);
-    setWarningDosis(null);
-
     if (idObat === '') {
       setDosisPerKg('');
       setDosisDewasa('');
@@ -142,26 +133,6 @@ export default function KalkulatorFarmasi() {
     }
   };
 
-  const simpanRiwayat = (tipeTab: TabType, labelTipe: string, detail: string, nilaiHasil: number, satuan: string, payload: any) => {
-    const namaObat = pilihanObat ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
-    const labelObat = namaObat ? `[${namaObat}] ` : '';
-
-    const itemBaru: RiwayatItem = {
-      id: Date.now(),
-      tipeTab,
-      labelTipe,
-      detail: labelObat + detail,
-      hasil: nilaiHasil.toFixed(2).replace(/\.00$/, ''),
-      satuan,
-      waktu: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
-      payload,
-    };
-
-    const riwayatBaru = [itemBaru, ...riwayat].slice(0, 10);
-    setRiwayat(riwayatBaru);
-    localStorage.setItem('riwayatKalkulator', JSON.stringify(riwayatBaru));
-  };
-
   const hapusSatuRiwayat = (id: number) => {
     const riwayatBaru = riwayat.filter((item) => item.id !== id);
     setRiwayat(riwayatBaru);
@@ -175,10 +146,6 @@ export default function KalkulatorFarmasi() {
 
   const editRiwayat = (item: RiwayatItem) => {
     setActiveTab(item.tipeTab);
-    setError('');
-    setHasil(null);
-    setWarningDosis(null);
-
     const p = item.payload;
     setPilihanObat(p.pilihanObat || '');
 
@@ -205,77 +172,126 @@ export default function KalkulatorFarmasi() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- EKSEKUSI PERHITUNGAN + FITUR SAFETY ALERT ---
-  const handleKalkulasi = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    setError('');
-    setHasil(null);
-    setWarningDosis(null);
+  // --- KALKULASI DINAMIS (LIVE COMPUTATION) ---
+  let hasil: number | null = null;
+  let satuanHasil = 'mg';
+  let warningDosis: string | null = null;
+  let errorMsg = '';
 
-    if (activeTab === 'umur') {
-      const nUmur = parseFloat(umur),
-        nDosis = parseFloat(dosisDewasa);
-      if (isNaN(nUmur) || isNaN(nDosis)) return setError('Mohon isi angka valid.');
-      if (nUmur < 1 || nUmur >= 12) return setError('Umur harus 1-11 tahun.');
-
-      const res = hitungDosisYoung(nUmur, nDosis);
-      setHasil(res);
-      setSatuanHasil('mg');
-      simpanRiwayat('umur', 'Umur (Young)', `U: ${nUmur}thn | Maks: ${nDosis}mg`, res, 'mg', { umur, dosisDewasa, pilihanObat });
-    } else if (activeTab === 'bb') {
-      const nBB = parseFloat(beratBadan),
-        nDosisKg = parseFloat(dosisPerKg);
-      if (isNaN(nBB) || isNaN(nDosisKg)) return setError('Mohon isi angka valid.');
-      if (nBB <= 0 || nDosisKg <= 0) return setError('Angka harus > 0.');
-
-      const res = hitungDosisBB(nBB, nDosisKg);
-      setHasil(res);
-      setSatuanHasil('mg');
-
-      // --- SAFETY CHECK (Pengecekan Batas Dosis Maksimal Berdasarkan Master Obat) ---
+  if (activeTab === 'bb') {
+    satuanHasil = 'mg';
+    const nBB = parseFloat(beratBadan);
+    const nDosisKg = parseFloat(dosisPerKg);
+    if (!isNaN(nBB) && !isNaN(nDosisKg) && nBB > 0 && nDosisKg > 0) {
+      hasil = hitungDosisBB(nBB, nDosisKg);
       if (pilihanObat) {
         const obatDipilih = MASTER_OBAT.find((o) => o.id === pilihanObat);
         if (obatDipilih && nDosisKg > obatDipilih.maxDosisKg) {
-          setWarningDosis(`⚠️ PERINGATAN OVERDOSE: Dosis ${nDosisKg} mg/kg melebihi batas aman referensi standar untuk ${obatDipilih.nama} (> ${obatDipilih.maxDosisKg} mg/kg). Harap verifikasi ulang resep!`);
+          warningDosis = `⚠️ PERINGATAN OVERDOSE: Dosis ${nDosisKg} mg/kg melebihi batas aman referensi standar untuk ${obatDipilih.nama} (> ${obatDipilih.maxDosisKg} mg/kg).`;
         }
       }
-
-      simpanRiwayat('bb', 'Berat Badan', `BB: ${nBB}kg | Dosis: ${nDosisKg}mg/kg`, res, 'mg', { beratBadan, dosisPerKg, pilihanObat });
-    } else if (activeTab === 'sirup') {
-      const nMinta = parseFloat(dosisPermintaan),
-        nSedia = parseFloat(dosisSediaan),
-        nVol = parseFloat(volumeSediaan);
-      if (isNaN(nMinta) || isNaN(nSedia) || isNaN(nVol)) return setError('Mohon isi angka valid.');
-      if (nSedia <= 0 || nVol <= 0) return setError('Sediaan tidak boleh 0.');
-
-      const res = hitungVolumeSirup(nMinta, nSedia, nVol);
-      setHasil(res);
-      setSatuanHasil('ml');
-      simpanRiwayat('sirup', 'Sirup Cair', `Minta: ${nMinta}mg | Sedia: ${nSedia}mg/${nVol}ml`, res, 'ml', { dosisPermintaan, dosisSediaan, volumeSediaan, pilihanObat });
-    } else if (activeTab === 'puyer') {
-      const nDosisBungkus = parseFloat(dosisPerBungkus),
-        nJmlBungkus = parseFloat(jumlahBungkus),
-        nDosisTab = parseFloat(dosisTablet);
-      if (isNaN(nDosisBungkus) || isNaN(nJmlBungkus) || isNaN(nDosisTab)) return setError('Mohon isi angka valid.');
-      if (nDosisTab <= 0) return setError('Dosis tablet tidak boleh 0.');
-
-      const res = hitungTabletPuyer(nDosisBungkus, nJmlBungkus, nDosisTab);
-      setHasil(res);
-      setSatuanHasil('tablet');
-      simpanRiwayat('puyer', 'Racik Puyer', `${nJmlBungkus}bks @${nDosisBungkus}mg | Tab: ${nDosisTab}mg`, res, 'tablet', { dosisPerBungkus, jumlahBungkus, dosisTablet, pilihanObat });
-    } else if (activeTab === 'tpm') {
-      const nVol = parseFloat(volumeInfus),
-        nWaktu = parseFloat(waktuInfus),
-        nFaktor = parseFloat(faktorTetes);
-      if (isNaN(nVol) || isNaN(nWaktu) || isNaN(nFaktor)) return setError('Mohon isi angka valid.');
-      if (nWaktu <= 0) return setError('Waktu tidak boleh 0.');
-
-      const res = hitungTPM(nVol, nWaktu, nFaktor);
-      setHasil(Math.round(res));
-      setSatuanHasil('tetes/mnt');
-      simpanRiwayat('tpm', 'Infus (TPM)', `Vol: ${nVol}ml | Waktu: ${nWaktu}jam | FT: ${nFaktor}`, Math.round(res), 'tpm', { volumeInfus, waktuInfus, faktorTetes });
+    } else if (beratBadan !== '' || dosisPerKg !== '') {
+      errorMsg = 'Mohon isi angka berat badan dan dosis dengan benar (> 0).';
     }
-  };
+  } else if (activeTab === 'umur') {
+    satuanHasil = 'mg';
+    const nUmur = parseFloat(umur);
+    const nDosis = parseFloat(dosisDewasa);
+    if (!isNaN(nUmur) && !isNaN(nDosis)) {
+      if (nUmur >= 1 && nUmur < 12) {
+        hasil = hitungDosisYoung(nUmur, nDosis);
+      } else if (umur !== '') {
+        errorMsg = 'Rumus Young hanya berlaku untuk umur 1 - 11 tahun.';
+      }
+    } else if (umur !== '' || dosisDewasa !== '') {
+      errorMsg = 'Mohon isi umur dan dosis dewasa dengan angka yang valid.';
+    }
+  } else if (activeTab === 'sirup') {
+    satuanHasil = 'ml';
+    const nMinta = parseFloat(dosisPermintaan);
+    const nSedia = parseFloat(dosisSediaan);
+    const nVol = parseFloat(volumeSediaan);
+    if (!isNaN(nMinta) && !isNaN(nSedia) && !isNaN(nVol) && nSedia > 0 && nVol > 0) {
+      hasil = hitungVolumeSirup(nMinta, nSedia, nVol);
+    } else if (dosisPermintaan !== '' || dosisSediaan !== '' || volumeSediaan !== '') {
+      errorMsg = 'Mohon lengkapi data sirup dengan angka yang valid (> 0).';
+    }
+  } else if (activeTab === 'puyer') {
+    satuanHasil = 'tablet';
+    const nDosisBungkus = parseFloat(dosisPerBungkus);
+    const nJmlBungkus = parseFloat(jumlahBungkus);
+    const nDosisTab = parseFloat(dosisTablet);
+    if (!isNaN(nDosisBungkus) && !isNaN(nJmlBungkus) && !isNaN(nDosisTab) && nDosisTab > 0) {
+      hasil = hitungTabletPuyer(nDosisBungkus, nJmlBungkus, nDosisTab);
+    } else if (dosisPerBungkus !== '' || jumlahBungkus !== '' || dosisTablet !== '') {
+      errorMsg = 'Mohon lengkapi data puyer dengan angka yang valid (> 0).';
+    }
+  } else if (activeTab === 'tpm') {
+    satuanHasil = 'tetes/mnt';
+    const nVol = parseFloat(volumeInfus);
+    const nWaktu = parseFloat(waktuInfus);
+    const nFaktor = parseFloat(faktorTetes);
+    if (!isNaN(nVol) && !isNaN(nWaktu) && !isNaN(nFaktor) && nWaktu > 0) {
+      hasil = Math.round(hitungTPM(nVol, nWaktu, nFaktor));
+    } else if (volumeInfus !== '' || waktuInfus !== '') {
+      errorMsg = 'Mohon lengkapi data infus dengan angka yang valid (> 0).';
+    }
+  }
+
+  // --- PENCATATAN OTOMATIS KE RIWAYAT (SMART HISTORY) ---
+  useEffect(() => {
+    if (hasil !== null && activeTab !== 'quiz') {
+      const formattedHasil = Number.isInteger(hasil) ? hasil.toString() : hasil.toFixed(2).replace(/\.00$/, '');
+      let labelTipe = '';
+      let detail = '';
+      let payload: any = {};
+
+      if (activeTab === 'bb') {
+        labelTipe = 'Berat Badan';
+        detail = `BB: ${beratBadan}kg | Dosis: ${dosisPerKg}mg/kg`;
+        payload = { beratBadan, dosisPerKg, pilihanObat };
+      } else if (activeTab === 'umur') {
+        labelTipe = 'Umur (Young)';
+        detail = `U: ${umur}thn | Maks: ${dosisDewasa}mg`;
+        payload = { umur, dosisDewasa, pilihanObat };
+      } else if (activeTab === 'sirup') {
+        labelTipe = 'Sirup Cair';
+        detail = `Minta: ${dosisPermintaan}mg | Sedia: ${dosisSediaan}mg/${volumeSediaan}ml`;
+        payload = { dosisPermintaan, dosisSediaan, volumeSediaan, pilihanObat };
+      } else if (activeTab === 'puyer') {
+        labelTipe = 'Racik Puyer';
+        detail = `${jumlahBungkus}bks @${dosisPerBungkus}mg | Tab: ${dosisTablet}mg`;
+        payload = { dosisPerBungkus, jumlahBungkus, dosisTablet, pilihanObat };
+      } else if (activeTab === 'tpm') {
+        labelTipe = 'Infus (TPM)';
+        detail = `Vol: ${volumeInfus}ml | Waktu: ${waktuInfus}jam | FT: ${faktorTetes}`;
+        payload = { volumeInfus, waktuInfus, faktorTetes };
+      }
+
+      const namaObat = pilihanObat ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
+      const fullDetail = namaObat ? `[${namaObat}] ${detail}` : detail;
+      const signature = `${activeTab}-${fullDetail}-${formattedHasil}`;
+
+      if (signature !== lastSavedSignature.current) {
+        lastSavedSignature.current = signature;
+        const itemBaru: RiwayatItem = {
+          id: Date.now(),
+          tipeTab: activeTab,
+          labelTipe,
+          detail: fullDetail,
+          hasil: formattedHasil,
+          satuan: satuanHasil,
+          waktu: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
+          payload,
+        };
+        setRiwayat((prev) => {
+          const updated = [itemBaru, ...prev].slice(0, 10);
+          localStorage.setItem('riwayatKalkulator', JSON.stringify(updated));
+          return updated;
+        });
+      }
+    }
+  }, [hasil, activeTab, beratBadan, dosisPerKg, umur, dosisDewasa, dosisPermintaan, dosisSediaan, volumeSediaan, dosisPerBungkus, jumlahBungkus, dosisTablet, volumeInfus, waktuInfus, faktorTetes, pilihanObat, satuanHasil]);
 
   const handleSubmitQuiz = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -321,9 +337,9 @@ export default function KalkulatorFarmasi() {
           ))}
         </div>
 
-        {/* --- FORM KALKULATOR UTAMA --- */}
+        {/* --- FORM KONTAINER (DINAMIS TANPA TOMBOL SUBMIT) --- */}
         {activeTab !== 'quiz' && (
-          <form onSubmit={handleKalkulasi} className="space-y-4">
+          <div className="space-y-4">
             {butuhPilihanObat && (
               <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-xl mb-2">
                 <label className="block text-sm font-bold text-indigo-900 mb-2">💊 Cari Master Obat (Otomatis Isi)</label>
@@ -357,7 +373,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setBeratBadan(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Contoh: 15"
-                    required
                   />
                 </div>
                 <div>
@@ -369,7 +384,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setDosisPerKg(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Contoh: 10"
-                    required
                   />
                 </div>
               </div>
@@ -386,7 +400,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setUmur(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Contoh: 6"
-                    required
                   />
                 </div>
                 <div>
@@ -398,7 +411,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setDosisDewasa(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Contoh: 500"
-                    required
                   />
                 </div>
               </div>
@@ -415,7 +427,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setDosisPermintaan(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Ketik total mg yang diresepkan..."
-                    required
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -428,7 +439,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setDosisSediaan(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 250"
-                      required
                     />
                   </div>
                   <div>
@@ -440,7 +450,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setVolumeSediaan(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 5"
-                      required
                     />
                   </div>
                 </div>
@@ -459,7 +468,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setDosisPerBungkus(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 30"
-                      required
                     />
                   </div>
                   <div>
@@ -471,7 +479,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setJumlahBungkus(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 15"
-                      required
                     />
                   </div>
                 </div>
@@ -484,7 +491,6 @@ export default function KalkulatorFarmasi() {
                     onChange={(e) => setDosisTablet(e.target.value)}
                     className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                     placeholder="Contoh: 100"
-                    required
                   />
                 </div>
               </div>
@@ -502,7 +508,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setVolumeInfus(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 500"
-                      required
                     />
                   </div>
                   <div>
@@ -514,7 +519,6 @@ export default function KalkulatorFarmasi() {
                       onChange={(e) => setWaktuInfus(e.target.value)}
                       className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none text-slate-900 font-medium"
                       placeholder="Contoh: 8"
-                      required
                     />
                   </div>
                 </div>
@@ -532,14 +536,7 @@ export default function KalkulatorFarmasi() {
                 </div>
               </div>
             )}
-
-            <button
-              type="submit"
-              className="w-full mt-4 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold py-3.5 rounded-xl hover:from-indigo-700 hover:to-violet-700 transition-all shadow-lg shadow-indigo-200 transform active:scale-[0.98]"
-            >
-              Hitung Sekarang
-            </button>
-          </form>
+          </div>
         )}
 
         {/* --- FORM QUIZ --- */}
@@ -598,7 +595,7 @@ export default function KalkulatorFarmasi() {
         )}
 
         {/* --- ERROR & SAFETY WARNING --- */}
-        {error !== '' && activeTab !== 'quiz' && <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm text-center border border-red-100 font-medium">{error}</div>}
+        {errorMsg !== '' && activeTab !== 'quiz' && <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm text-center border border-red-100 font-medium">{errorMsg}</div>}
 
         {warningDosis && (
           <div className="mt-6 p-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-xl text-sm font-bold flex items-start gap-3 shadow-sm animate-pulse">
@@ -607,8 +604,8 @@ export default function KalkulatorFarmasi() {
           </div>
         )}
 
-        {/* --- HASIL KALKULASI --- */}
-        {hasil !== null && error === '' && activeTab !== 'quiz' && (
+        {/* --- HASIL KALKULASI DINAMIS --- */}
+        {hasil !== null && errorMsg === '' && activeTab !== 'quiz' && (
           <div className="mt-8 p-6 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl text-center shadow-lg shadow-indigo-200 text-white transform transition-all">
             <p className="text-indigo-100 font-semibold mb-1 text-sm uppercase tracking-wider">
               {activeTab === 'puyer' ? 'Ambil & Gerus' : activeTab === 'sirup' ? 'Berikan Sebanyak' : activeTab === 'tpm' ? 'Kecepatan Tetesan' : 'Dosis Sekali Minum'}
