@@ -64,7 +64,7 @@ const DATABASE_INTERAKSI: { obat1: string; obat2: string; tingkat: 'Major' | 'Mo
   { obat1: '8', obat2: '7', tingkat: 'Moderate', deskripsi: 'Erythromycin dan Azithromycin (sesama makrolid) dapat meningkatkan risiko gangguan irama jantung.' },
 ];
 
-type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'quiz';
+type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'kapsul' | 'quiz';
 type SoalQuiz = { beratBadan: number; dosisPerKg: number; jawabanBenar: number };
 
 type RiwayatItem = {
@@ -84,10 +84,11 @@ const TAB_LIST: { id: TabType; label: string }[] = [
   { id: 'sirup', label: 'Sirup' },
   { id: 'puyer', label: 'Puyer' },
   { id: 'tpm', label: 'Infus' },
-  { id: 'bsa', label: 'BSA (Luas Tubuh)' },
-  { id: 'ginjal', label: 'Fungsi Ginjal' },
+  { id: 'bsa', label: 'BSA' },
+  { id: 'ginjal', label: 'Ginjal' },
   { id: 'syringe', label: 'Syringe' },
   { id: 'interaksi', label: 'Interaksi' },
+  { id: 'kapsul', label: 'Kapsul' },
   { id: 'quiz', label: 'Kuis' },
 ];
 
@@ -146,6 +147,12 @@ export default function KalkulatorFarmasi() {
   // State untuk Interaksi Obat
   const [obatInteraksiA, setObatInteraksiA] = useState<string>('');
   const [obatInteraksiB, setObatInteraksiB] = useState<string>('');
+
+  // State untuk Kalkulator Kapsul Racikan
+  const [dosisPerKapsul, setDosisPerKapsul] = useState<string>('');
+  const [jumlahKapsul, setJumlahKapsul] = useState<string>('');
+  const [kandunganTabletKapsul, setKandunganTabletKapsul] = useState<string>('');
+  const [bobotTargetKapsul, setBobotTargetKapsul] = useState<string>(''); // Target bobot 1 kapsul total (mg) termasuk pengisi
 
   // State untuk Generator Etiket Resep
   const [frekuensiEtiket, setFrekuensiEtiket] = useState<string>('3 kali sehari');
@@ -265,6 +272,11 @@ export default function KalkulatorFarmasi() {
     } else if (item.tipeTab === 'interaksi') {
       setObatInteraksiA(p.obatInteraksiA);
       setObatInteraksiB(p.obatInteraksiB);
+    } else if (item.tipeTab === 'kapsul') {
+      setDosisPerKapsul(p.dosisPerKapsul);
+      setJumlahKapsul(p.jumlahKapsul);
+      setKandunganTabletKapsul(p.kandunganTabletKapsul);
+      setBobotTargetKapsul(p.bobotTargetKapsul);
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -388,7 +400,7 @@ export default function KalkulatorFarmasi() {
         const found = DATABASE_INTERAKSI.find((i) => (i.obat1 === obatInteraksiA && i.obat2 === obatInteraksiB) || (i.obat1 === obatInteraksiB && i.obat2 === obatInteraksiA));
         if (found) {
           interaksiResult = { tingkat: found.tingkat, deskripsi: found.deskripsi };
-          hasil = found.tingkat === 'Major' ? 2 : 1; // dummy indicator for result box trigger
+          hasil = found.tingkat === 'Major' ? 2 : 1;
         } else {
           interaksiResult = { tingkat: 'Aman', deskripsi: 'Tidak ditemukan interaksi mayor atau moderate di antara kedua obat ini dalam database referensi standar kami.' };
           hasil = 0;
@@ -396,6 +408,33 @@ export default function KalkulatorFarmasi() {
       }
     } else {
       errorMsg = 'Silakan pilih kedua obat yang ingin dianalisis.';
+    }
+  } else if (activeTab === 'kapsul') {
+    satuanHasil = 'tablet';
+    const nDosisKapsul = parseFloat(dosisPerKapsul);
+    const nJmlKapsul = parseFloat(jumlahKapsul);
+    const nKandunganTab = parseFloat(kandunganTabletKapsul);
+    const nBobotTarget = parseFloat(bobotTargetKapsul);
+
+    if (!isNaN(nDosisKapsul) && !isNaN(nJmlKapsul) && !isNaN(nKandunganTab) && nKandunganTab > 0 && nDosisKapsul > 0 && nJmlKapsul > 0) {
+      // Jumlah tablet yg digerus = (dosis per kapsul * jumlah kapsul) / kandungan 1 tablet
+      const totalAktifMg = nDosisKapsul * nJmlKapsul;
+      hasil = totalAktifMg / nKandunganTab;
+
+      if (!isNaN(nBobotTarget) && nBobotTarget > 0) {
+        const totalBobotRacikan = nBobotTarget * nJmlKapsul;
+        const totalBeratAktif = totalAktifMg;
+        if (totalBobotRacikan >= totalBeratAktif) {
+          const totalSL = totalBobotRacikan - totalBeratAktif;
+          subInfoText = `Total Zat Aktif: ${totalAktifMg} mg | Tambahan Pengisi (SL): ${totalSL.toFixed(1)} mg (${(totalSL / nJmlKapsul).toFixed(1)} mg/kapsul)`;
+        } else {
+          subInfoText = `⚠️ Target bobot kapsul lebih kecil dari total zat aktif!`;
+        }
+      } else {
+        subInfoText = `Total Zat Aktif Dibutuhkan: ${totalAktifMg} mg`;
+      }
+    } else if (dosisPerKapsul !== '' || jumlahKapsul !== '' || kandunganTabletKapsul !== '') {
+      errorMsg = 'Mohon lengkapi data kapsul racikan dengan angka valid (> 0).';
     }
   }
 
@@ -444,9 +483,13 @@ export default function KalkulatorFarmasi() {
         const namaB = MASTER_OBAT.find((o) => o.id === obatInteraksiB)?.nama || '';
         detail = `Obat A: ${namaA} vs Obat B: ${namaB}`;
         payload = { obatInteraksiA, obatInteraksiB };
+      } else if (activeTab === 'kapsul') {
+        labelTipe = 'Kapsul Racikan';
+        detail = `${jumlahKapsul} kapsul @${dosisPerKapsul}mg | Kandungan Tab: ${kandunganTabletKapsul}mg`;
+        payload = { dosisPerKapsul, jumlahKapsul, kandunganTabletKapsul, bobotTargetKapsul };
       }
 
-      const namaObat = pilihanObat && activeTab !== 'bsa' && activeTab !== 'ginjal' && activeTab !== 'syringe' && activeTab !== 'interaksi' ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
+      const namaObat = pilihanObat && activeTab !== 'bsa' && activeTab !== 'ginjal' && activeTab !== 'syringe' && activeTab !== 'interaksi' && activeTab !== 'kapsul' ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
       const fullDetail = namaObat ? `[${namaObat}] ${detail}` : detail;
       const signature = `${activeTab}-${fullDetail}-${formattedHasil}`;
 
@@ -498,6 +541,10 @@ export default function KalkulatorFarmasi() {
     volumeSpuit,
     obatInteraksiA,
     obatInteraksiB,
+    dosisPerKapsul,
+    jumlahKapsul,
+    kandunganTabletKapsul,
+    bobotTargetKapsul,
     interaksiResult,
     pilihanObat,
     satuanHasil,
@@ -561,7 +608,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
         </header>
 
         {/* --- TAB NAVIGASI --- */}
-        <div className={`grid grid-cols-5 sm:grid-cols-10 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
+        <div className={`grid grid-cols-4 sm:grid-cols-11 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
           {TAB_LIST.map((tab) => (
             <button
               key={tab.id}
@@ -984,6 +1031,59 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                 </div>
               </div>
             )}
+
+            {activeTab === 'kapsul' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Dosis Zat Aktif / Kapsul (mg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={dosisPerKapsul}
+                      onChange={(e) => setDosisPerKapsul(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 15"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Jumlah Kapsul Dibuat</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={jumlahKapsul}
+                      onChange={(e) => setJumlahKapsul(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 30"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Kandungan 1 Tablet Sumber (mg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={kandunganTabletKapsul}
+                      onChange={(e) => setKandunganTabletKapsul(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 50"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Target Bobot 1 Kapsul (mg, Opsional)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={bobotTargetKapsul}
+                      onChange={(e) => setBobotTargetKapsul(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 250 (Isi SL)"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1082,7 +1182,9 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                             ? 'Kecepatan Syringe Pump'
                             : activeTab === 'interaksi'
                               ? 'Status Interaksi Obat'
-                              : 'Dosis Sekali Minum'}
+                              : activeTab === 'kapsul'
+                                ? 'Jumlah Tablet Sumber Digerus'
+                                : 'Dosis Sekali Minum'}
               </p>
               <p className="text-5xl font-black tracking-tight">
                 {activeTab === 'interaksi' ? interaksiResult?.tingkat : Number.isInteger(hasil) ? hasil : hasil.toFixed(2)}
