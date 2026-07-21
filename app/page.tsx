@@ -1258,7 +1258,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
             <div className="flex justify-between items-center mb-4">
               <h3 className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-800'} uppercase tracking-wider`}>Riwayat Terakhir</h3>
               <button onClick={hapusSemuaRiwayat} className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors bg-red-50 dark:bg-red-950/50 px-3 py-1.5 rounded-lg border border-red-100 dark:border-red-900/50">
-                Hapus Semua
+                Hapus Semuaa
               </button>
             </div>
 
