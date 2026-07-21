@@ -45,7 +45,7 @@ type RiwayatItem = {
   hasil: string;
   satuan: string;
   waktu: string;
-  payload: any;
+  payload: Record<string, string>; // Diubah dari 'any' menjadi Record yang aman untuk TypeScript
 };
 
 const TAB_LIST: { id: TabType; label: string }[] = [
@@ -57,8 +57,17 @@ const TAB_LIST: { id: TabType; label: string }[] = [
   { id: 'quiz', label: 'Kuis' },
 ];
 
+const buatSoalQuizBaru = (): SoalQuiz => {
+  const acakBB = Math.floor(Math.random() * 15) + 5;
+  const acakDosis = Math.floor(Math.random() * 10) + 10;
+  return {
+    beratBadan: acakBB,
+    dosisPerKg: acakDosis,
+    jawabanBenar: acakBB * acakDosis,
+  };
+};
+
 export default function KalkulatorFarmasi() {
-  const [isClient, setIsClient] = useState(false);
   const [activeTab, setActiveTab] = useState<TabType>('bb');
 
   const [pilihanObat, setPilihanObat] = useState<string>('');
@@ -80,29 +89,28 @@ export default function KalkulatorFarmasi() {
   const [waktuInfus, setWaktuInfus] = useState<string>('');
   const [faktorTetes, setFaktorTetes] = useState<string>('20');
 
-  const [riwayat, setRiwayat] = useState<RiwayatItem[]>([]);
+  const [riwayat, setRiwayat] = useState<RiwayatItem[]>(() => {
+    if (typeof window !== 'undefined') {
+      const dataTersimpan = localStorage.getItem('riwayatKalkulator');
+      if (dataTersimpan) {
+        try {
+          return JSON.parse(dataTersimpan);
+        } catch (e) {
+          return [];
+        }
+      }
+    }
+    return [];
+  });
+
   const lastSavedSignature = useRef<string>('');
 
   const [soalQuiz, setSoalQuiz] = useState<SoalQuiz | null>(null);
   const [jawabanUser, setJawabanUser] = useState<string>('');
   const [statusQuiz, setStatusQuiz] = useState<'idle' | 'benar' | 'salah'>('idle');
 
-  useEffect(() => {
-    setIsClient(true);
-    const dataTersimpan = localStorage.getItem('riwayatKalkulator');
-    if (dataTersimpan) {
-      try {
-        setRiwayat(JSON.parse(dataTersimpan));
-      } catch (e) {
-        console.error(e);
-      }
-    }
-  }, []);
-
   const generateSoalQuiz = () => {
-    const acakBB = Math.floor(Math.random() * 15) + 5;
-    const acakDosis = Math.floor(Math.random() * 10) + 10;
-    setSoalQuiz({ beratBadan: acakBB, dosisPerKg: acakDosis, jawabanBenar: acakBB * acakDosis });
+    setSoalQuiz(buatSoalQuizBaru());
     setJawabanUser('');
     setStatusQuiz('idle');
   };
@@ -172,7 +180,6 @@ export default function KalkulatorFarmasi() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  // --- KALKULASI DINAMIS (LIVE COMPUTATION) ---
   let hasil: number | null = null;
   let satuanHasil = 'mg';
   let warningDosis: string | null = null;
@@ -238,13 +245,12 @@ export default function KalkulatorFarmasi() {
     }
   }
 
-  // --- PENCATATAN OTOMATIS KE RIWAYAT (SMART HISTORY) ---
   useEffect(() => {
     if (hasil !== null && activeTab !== 'quiz') {
       const formattedHasil = Number.isInteger(hasil) ? hasil.toString() : hasil.toFixed(2).replace(/\.00$/, '');
       let labelTipe = '';
       let detail = '';
-      let payload: any = {};
+      let payload: Record<string, string> = {};
 
       if (activeTab === 'bb') {
         labelTipe = 'Berat Badan';
@@ -301,14 +307,11 @@ export default function KalkulatorFarmasi() {
     setStatusQuiz(jawabanAngka === soalQuiz.jawabanBenar ? 'benar' : 'salah');
   };
 
-  if (!isClient) return null;
-
   const butuhPilihanObat = activeTab === 'bb' || activeTab === 'umur' || activeTab === 'sirup' || activeTab === 'puyer';
 
   return (
     <main className="min-h-screen bg-gradient-to-br from-indigo-50 to-slate-100 flex items-center justify-center p-4 sm:p-6 font-sans">
       <div className="w-full max-w-xl bg-white p-6 sm:p-8 rounded-[2rem] shadow-xl shadow-indigo-100/50 border border-white">
-        {/* --- HEADER --- */}
         <header className="text-center mb-8">
           <div className="inline-block p-3 bg-indigo-50 rounded-2xl mb-3">
             <svg className="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
@@ -324,7 +327,6 @@ export default function KalkulatorFarmasi() {
           <p className="text-sm text-slate-500 mt-1 font-medium">Asisten Perhitungan Farmasi & Klinis</p>
         </header>
 
-        {/* --- TAB NAVIGASI --- */}
         <div className="grid grid-cols-3 sm:grid-cols-6 gap-1 p-1 bg-slate-100 rounded-xl mb-6">
           {TAB_LIST.map((tab) => (
             <button
@@ -337,7 +339,6 @@ export default function KalkulatorFarmasi() {
           ))}
         </div>
 
-        {/* --- FORM KONTAINER (DINAMIS TANPA TOMBOL SUBMIT) --- */}
         {activeTab !== 'quiz' && (
           <div className="space-y-4">
             {butuhPilihanObat && (
@@ -539,7 +540,6 @@ export default function KalkulatorFarmasi() {
           </div>
         )}
 
-        {/* --- FORM QUIZ --- */}
         {activeTab === 'quiz' && soalQuiz && (
           <form onSubmit={handleSubmitQuiz} className="space-y-5">
             <div className="p-6 bg-gradient-to-br from-amber-50 to-orange-50 border border-amber-100 rounded-2xl text-center">
@@ -594,7 +594,6 @@ export default function KalkulatorFarmasi() {
           </form>
         )}
 
-        {/* --- ERROR & SAFETY WARNING --- */}
         {errorMsg !== '' && activeTab !== 'quiz' && <div className="mt-6 p-4 bg-red-50 text-red-600 rounded-xl text-sm text-center border border-red-100 font-medium">{errorMsg}</div>}
 
         {warningDosis && (
@@ -604,7 +603,6 @@ export default function KalkulatorFarmasi() {
           </div>
         )}
 
-        {/* --- HASIL KALKULASI DINAMIS --- */}
         {hasil !== null && errorMsg === '' && activeTab !== 'quiz' && (
           <div className="mt-8 p-6 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl text-center shadow-lg shadow-indigo-200 text-white transform transition-all">
             <p className="text-indigo-100 font-semibold mb-1 text-sm uppercase tracking-wider">
@@ -616,7 +614,6 @@ export default function KalkulatorFarmasi() {
           </div>
         )}
 
-        {/* --- RIWAYAT PERHITUNGAN --- */}
         {riwayat.length > 0 && activeTab !== 'quiz' && (
           <div className="mt-10 pt-8 border-t border-slate-100">
             <div className="flex justify-between items-center mb-4">
