@@ -67,6 +67,16 @@ const DATABASE_INTERAKSI: { obat1: string; obat2: string; tingkat: 'Major' | 'Mo
 type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'kapsul' | 'quiz';
 type SoalQuiz = { beratBadan: number; dosisPerKg: number; jawabanBenar: number };
 
+type KapsulItem = {
+  id: string;
+  masterId: string;
+  nama: string;
+  dosisPerKapsul: string;
+  kandunganTablet: string;
+  pencarianMaster?: string;
+  isDropdownOpen?: boolean;
+};
+
 type RiwayatItem = {
   id: number;
   tipeTab: TabType;
@@ -148,11 +158,10 @@ export default function KalkulatorFarmasi() {
   const [obatInteraksiA, setObatInteraksiA] = useState<string>('');
   const [obatInteraksiB, setObatInteraksiB] = useState<string>('');
 
-  // State untuk Kalkulator Kapsul Racikan
-  const [dosisPerKapsul, setDosisPerKapsul] = useState<string>('');
+  // State untuk Kalkulator Kapsul Racikan Multi-Obat
+  const [daftarObatKapsul, setDaftarObatKapsul] = useState<KapsulItem[]>([{ id: '1', masterId: '', nama: '', dosisPerKapsul: '', kandunganTablet: '', pencarianMaster: '', isDropdownOpen: false }]);
   const [jumlahKapsul, setJumlahKapsul] = useState<string>('');
-  const [kandunganTabletKapsul, setKandunganTabletKapsul] = useState<string>('');
-  const [bobotTargetKapsul, setBobotTargetKapsul] = useState<string>(''); // Target bobot 1 kapsul total (mg) termasuk pengisi
+  const [bobotTargetKapsul, setBobotTargetKapsul] = useState<string>('');
 
   // State untuk Generator Etiket Resep
   const [frekuensiEtiket, setFrekuensiEtiket] = useState<string>('3 kali sehari');
@@ -215,6 +224,21 @@ export default function KalkulatorFarmasi() {
     setDosisTablet(obat.dosisDewasa.toString());
   };
 
+  // Handler untuk baris obat kapsul
+  const tambahBarisObatKapsul = () => {
+    setDaftarObatKapsul((prev) => [...prev, { id: Date.now().toString(), masterId: '', nama: '', dosisPerKapsul: '', kandunganTablet: '', pencarianMaster: '', isDropdownOpen: false }]);
+  };
+
+  const hapusBarisObatKapsul = (id: string) => {
+    if (daftarObatKapsul.length > 1) {
+      setDaftarObatKapsul((prev) => prev.filter((item) => item.id !== id));
+    }
+  };
+
+  const updateBarisObatKapsul = (id: string, field: keyof KapsulItem, value: any) => {
+    setDaftarObatKapsul((prev) => prev.map((item) => (item.id === id ? { ...item, [field]: value } : item)));
+  };
+
   const hapusSatuRiwayat = (id: number) => {
     const riwayatBaru = riwayat.filter((item) => item.id !== id);
     setRiwayat(riwayatBaru);
@@ -273,10 +297,15 @@ export default function KalkulatorFarmasi() {
       setObatInteraksiA(p.obatInteraksiA);
       setObatInteraksiB(p.obatInteraksiB);
     } else if (item.tipeTab === 'kapsul') {
-      setDosisPerKapsul(p.dosisPerKapsul);
-      setJumlahKapsul(p.jumlahKapsul);
-      setKandunganTabletKapsul(p.kandunganTabletKapsul);
-      setBobotTargetKapsul(p.bobotTargetKapsul);
+      if (p.daftarObatKapsul) {
+        try {
+          const parsed = JSON.parse(p.daftarObatKapsul);
+          const mapped = parsed.map((i: any) => ({ ...i, pencarianMaster: i.nama, isDropdownOpen: false }));
+          setDaftarObatKapsul(mapped);
+        } catch (e) {}
+      }
+      setJumlahKapsul(p.jumlahKapsul || '');
+      setBobotTargetKapsul(p.bobotTargetKapsul || '');
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -410,31 +439,42 @@ export default function KalkulatorFarmasi() {
       errorMsg = 'Silakan pilih kedua obat yang ingin dianalisis.';
     }
   } else if (activeTab === 'kapsul') {
-    satuanHasil = 'tablet';
-    const nDosisKapsul = parseFloat(dosisPerKapsul);
+    satuanHasil = 'mg/kps';
     const nJmlKapsul = parseFloat(jumlahKapsul);
-    const nKandunganTab = parseFloat(kandunganTabletKapsul);
     const nBobotTarget = parseFloat(bobotTargetKapsul);
 
-    if (!isNaN(nDosisKapsul) && !isNaN(nJmlKapsul) && !isNaN(nKandunganTab) && nKandunganTab > 0 && nDosisKapsul > 0 && nJmlKapsul > 0) {
-      // Jumlah tablet yg digerus = (dosis per kapsul * jumlah kapsul) / kandungan 1 tablet
-      const totalAktifMg = nDosisKapsul * nJmlKapsul;
-      hasil = totalAktifMg / nKandunganTab;
+    if (!isNaN(nJmlKapsul) && nJmlKapsul > 0 && daftarObatKapsul.length > 0) {
+      let totalAktifPerKps = 0;
+      let isValid = true;
 
-      if (!isNaN(nBobotTarget) && nBobotTarget > 0) {
-        const totalBobotRacikan = nBobotTarget * nJmlKapsul;
-        const totalBeratAktif = totalAktifMg;
-        if (totalBobotRacikan >= totalBeratAktif) {
-          const totalSL = totalBobotRacikan - totalBeratAktif;
-          subInfoText = `Total Zat Aktif: ${totalAktifMg} mg | Tambahan Pengisi (SL): ${totalSL.toFixed(1)} mg (${(totalSL / nJmlKapsul).toFixed(1)} mg/kapsul)`;
+      for (const obat of daftarObatKapsul) {
+        const dKps = parseFloat(obat.dosisPerKapsul);
+        const kTab = parseFloat(obat.kandunganTablet);
+        if (isNaN(dKps) || isNaN(kTab) || kTab <= 0 || dKps <= 0) {
+          isValid = false;
         } else {
-          subInfoText = `⚠️ Target bobot kapsul lebih kecil dari total zat aktif!`;
+          totalAktifPerKps += dKps;
         }
-      } else {
-        subInfoText = `Total Zat Aktif Dibutuhkan: ${totalAktifMg} mg`;
       }
-    } else if (dosisPerKapsul !== '' || jumlahKapsul !== '' || kandunganTabletKapsul !== '') {
-      errorMsg = 'Mohon lengkapi data kapsul racikan dengan angka valid (> 0).';
+
+      if (isValid) {
+        hasil = totalAktifPerKps;
+        let extraInfo = `Total Zat Aktif per Kapsul: ${totalAktifPerKps} mg`;
+        if (!isNaN(nBobotTarget) && nBobotTarget > 0) {
+          if (nBobotTarget >= totalAktifPerKps) {
+            const slPerKps = nBobotTarget - totalAktifPerKps;
+            const totalSL = slPerKps * nJmlKapsul;
+            extraInfo += ` | Tambahan SL: ${slPerKps.toFixed(1)} mg/kps (Total SL: ${totalSL.toFixed(1)} mg)`;
+          } else {
+            errorMsg = '⚠️ Target bobot 1 kapsul lebih kecil dari total zat aktif per kapsul!';
+          }
+        }
+        subInfoText = extraInfo;
+      } else {
+        errorMsg = 'Mohon lengkapi semua data dosis dan kandungan tablet obat kapsul dengan valid (> 0).';
+      }
+    } else if (jumlahKapsul !== '') {
+      errorMsg = 'Mohon isi jumlah kapsul yang akan dibuat dengan benar (> 0).';
     }
   }
 
@@ -484,9 +524,14 @@ export default function KalkulatorFarmasi() {
         detail = `Obat A: ${namaA} vs Obat B: ${namaB}`;
         payload = { obatInteraksiA, obatInteraksiB };
       } else if (activeTab === 'kapsul') {
-        labelTipe = 'Kapsul Racikan';
-        detail = `${jumlahKapsul} kapsul @${dosisPerKapsul}mg | Kandungan Tab: ${kandunganTabletKapsul}mg`;
-        payload = { dosisPerKapsul, jumlahKapsul, kandunganTabletKapsul, bobotTargetKapsul };
+        labelTipe = 'Kapsul Racikan Multi-Obat';
+        detail = `${jumlahKapsul} kapsul | ${daftarObatKapsul.length} macam obat`;
+        const cleanKapsul = daftarObatKapsul.map(({ pencarianMaster, isDropdownOpen, ...rest }) => rest);
+        payload = {
+          daftarObatKapsul: JSON.stringify(cleanKapsul),
+          jumlahKapsul,
+          bobotTargetKapsul,
+        };
       }
 
       const namaObat = pilihanObat && activeTab !== 'bsa' && activeTab !== 'ginjal' && activeTab !== 'syringe' && activeTab !== 'interaksi' && activeTab !== 'kapsul' ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
@@ -541,9 +586,8 @@ export default function KalkulatorFarmasi() {
     volumeSpuit,
     obatInteraksiA,
     obatInteraksiB,
-    dosisPerKapsul,
+    daftarObatKapsul,
     jumlahKapsul,
-    kandunganTabletKapsul,
     bobotTargetKapsul,
     interaksiResult,
     pilihanObat,
@@ -1034,18 +1078,128 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
 
             {activeTab === 'kapsul' && (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Dosis Zat Aktif / Kapsul (mg)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={dosisPerKapsul}
-                      onChange={(e) => setDosisPerKapsul(e.target.value)}
-                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
-                      placeholder="Contoh: 15"
-                    />
-                  </div>
+                <div className="flex justify-between items-center">
+                  <label className={`block text-sm font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-900'}`}>💊 Daftar Komposisi Obat dalam Kapsul</label>
+                  <button type="button" onClick={tambahBarisObatKapsul} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">
+                    + Tambah Obat Lain
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {daftarObatKapsul.map((item, index) => {
+                    const searchVal = item.pencarianMaster !== undefined ? item.pencarianMaster : item.nama;
+                    const filteredMaster = MASTER_OBAT.filter((o) => o.nama.toLowerCase().includes(searchVal.toLowerCase()) || o.kategori.toLowerCase().includes(searchVal.toLowerCase()));
+
+                    return (
+                      <div key={item.id} className={`p-4 ${isDarkMode ? 'bg-slate-800/80 border-slate-700' : 'bg-slate-50 border-slate-200'} border rounded-xl space-y-3 relative`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-xs font-bold text-indigo-500">Komposisi Obat #{index + 1}</span>
+                          {daftarObatKapsul.length > 1 && (
+                            <button type="button" onClick={() => hapusBarisObatKapsul(item.id)} className="text-red-500 hover:text-red-700 text-xs font-bold px-2 py-0.5 bg-red-100/50 rounded-md">
+                              Hapus
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Searchbox Master Obat untuk Baris Ini */}
+                        <div className="relative">
+                          <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>🔍 Cari Master Obat (Ketik untuk Filter)</label>
+                          <input
+                            type="text"
+                            value={searchVal}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateBarisObatKapsul(item.id, 'pencarianMaster', val);
+                              updateBarisObatKapsul(item.id, 'isDropdownOpen', true);
+                              updateBarisObatKapsul(item.id, 'nama', val);
+                            }}
+                            onFocus={() => updateBarisObatKapsul(item.id, 'isDropdownOpen', true)}
+                            placeholder="Ketik nama obat (contoh: Paracetamol)..."
+                            className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'} border rounded-lg text-xs font-semibold outline-none shadow-sm`}
+                          />
+
+                          {item.isDropdownOpen && (
+                            <div
+                              className={`absolute left-0 right-0 z-30 mt-1 max-h-48 overflow-y-auto ${isDarkMode ? 'bg-slate-900 border-slate-700 divide-slate-800' : 'bg-white border-slate-200 divide-slate-100'} border rounded-xl shadow-lg divide-y`}
+                            >
+                              {filteredMaster.length > 0 ? (
+                                filteredMaster.map((obat) => (
+                                  <div
+                                    key={obat.id}
+                                    onClick={() => {
+                                      setDaftarObatKapsul((prev) =>
+                                        prev.map((i) => {
+                                          if (i.id === item.id) {
+                                            return {
+                                              ...i,
+                                              masterId: obat.id,
+                                              nama: obat.nama,
+                                              pencarianMaster: obat.nama,
+                                              kandunganTablet: obat.dosisDewasa.toString(),
+                                              isDropdownOpen: false,
+                                            };
+                                          }
+                                          return i;
+                                        }),
+                                      );
+                                    }}
+                                    className={`p-2.5 ${isDarkMode ? 'hover:bg-slate-800' : 'hover:bg-indigo-50'} cursor-pointer flex justify-between items-center text-xs transition-colors`}
+                                  >
+                                    <div>
+                                      <p className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>{obat.nama}</p>
+                                      <p className="text-[10px] text-slate-400">{obat.kategori}</p>
+                                    </div>
+                                    <span className={`text-[10px] font-semibold ${isDarkMode ? 'text-indigo-300 bg-indigo-950/80' : 'text-indigo-600 bg-indigo-50'} px-2 py-0.5 rounded-md`}>{obat.dosisDewasa} mg</span>
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="p-2.5 text-[11px] text-slate-500 text-center">Obat tidak ditemukan</div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Nama Obat (Manual / Terisi)</label>
+                          <input
+                            type="text"
+                            value={item.nama}
+                            onChange={(e) => updateBarisObatKapsul(item.id, 'nama', e.target.value)}
+                            placeholder="Contoh: Paracetamol..."
+                            className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-lg text-xs font-medium outline-none`}
+                          />
+                        </div>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Dosis Zat Aktif / Kapsul (mg)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={item.dosisPerKapsul}
+                              onChange={(e) => updateBarisObatKapsul(item.id, 'dosisPerKapsul', e.target.value)}
+                              placeholder="Contoh: 150"
+                              className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-lg text-xs font-medium outline-none`}
+                            />
+                          </div>
+                          <div>
+                            <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Kandungan 1 Tablet Sumber (mg)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              value={item.kandunganTablet}
+                              onChange={(e) => updateBarisObatKapsul(item.id, 'kandunganTablet', e.target.value)}
+                              placeholder="Contoh: 500"
+                              className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-lg text-xs font-medium outline-none`}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
                   <div>
                     <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Jumlah Kapsul Dibuat</label>
                     <input
@@ -1053,32 +1207,19 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                       step="1"
                       value={jumlahKapsul}
                       onChange={(e) => setJumlahKapsul(e.target.value)}
-                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
                       placeholder="Contoh: 30"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Kandungan 1 Tablet Sumber (mg)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      value={kandunganTabletKapsul}
-                      onChange={(e) => setKandunganTabletKapsul(e.target.value)}
-                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
-                      placeholder="Contoh: 50"
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
                     />
                   </div>
                   <div>
-                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Target Bobot 1 Kapsul (mg, Opsional)</label>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Target Bobot 1 Kapsul (mg, Pengisi SL)</label>
                     <input
                       type="number"
                       step="0.1"
                       value={bobotTargetKapsul}
                       onChange={(e) => setBobotTargetKapsul(e.target.value)}
-                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
-                      placeholder="Contoh: 250 (Isi SL)"
+                      placeholder="Contoh: 300"
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
                     />
                   </div>
                 </div>
@@ -1183,7 +1324,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                             : activeTab === 'interaksi'
                               ? 'Status Interaksi Obat'
                               : activeTab === 'kapsul'
-                                ? 'Jumlah Tablet Sumber Digerus'
+                                ? 'Total Zat Aktif per Kapsul'
                                 : 'Dosis Sekali Minum'}
               </p>
               <p className="text-5xl font-black tracking-tight">
@@ -1191,6 +1332,36 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                 {activeTab !== 'interaksi' && <span className="text-xl font-medium opacity-80">{satuanHasil}</span>}
               </p>
               {activeTab === 'interaksi' && interaksiResult && <p className="mt-3 text-xs sm:text-sm font-medium leading-relaxed bg-black/20 p-3 rounded-xl">{interaksiResult.deskripsi}</p>}
+
+              {/* Rincian Tablet untuk Kapsul Multi-Obat */}
+              {activeTab === 'kapsul' && (
+                <div className="mt-4 pt-4 border-t border-white/20 text-left space-y-2">
+                  <p className="text-xs font-bold uppercase tracking-wider text-indigo-200">Rincian Tablet yang Harus Digerus:</p>
+                  <div className="space-y-1.5">
+                    {daftarObatKapsul.map((item, idx) => {
+                      const dKps = parseFloat(item.dosisPerKapsul);
+                      const kTab = parseFloat(item.kandunganTablet);
+                      const nJml = parseFloat(jumlahKapsul);
+                      if (!isNaN(dKps) && !isNaN(kTab) && !isNaN(nJml) && kTab > 0) {
+                        const totalMg = dKps * nJml;
+                        const tabReq = totalMg / kTab;
+                        const formattedTab = Number.isInteger(tabReq) ? tabReq.toString() : tabReq.toFixed(2);
+                        return (
+                          <div key={item.id} className="flex justify-between items-center text-xs bg-black/20 px-3 py-1.5 rounded-lg">
+                            <span className="font-semibold">
+                              {idx + 1}. {item.nama || `Obat #${idx + 1}`} ({dKps} mg/kps)
+                            </span>
+                            <span className="font-black text-indigo-200">
+                              {formattedTab} tablet ({totalMg} mg total)
+                            </span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* --- GENERATOR TEKS ETIKET RESEP --- */}
@@ -1258,7 +1429,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
             <div className="flex justify-between items-center mb-4">
               <h3 className={`text-sm font-bold ${isDarkMode ? 'text-slate-300' : 'text-slate-800'} uppercase tracking-wider`}>Riwayat Terakhir</h3>
               <button onClick={hapusSemuaRiwayat} className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors bg-red-50 dark:bg-red-950/50 px-3 py-1.5 rounded-lg border border-red-100 dark:border-red-900/50">
-                Hapus Semuaa
+                Hapus Semua
               </button>
             </div>
 
