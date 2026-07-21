@@ -1079,7 +1079,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
             {activeTab === 'kapsul' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <label className={`block text-sm font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-900'}`}>💊 Daftar Komposisi Obat dalam Kapsul</label>
+                  <label className={`block text-sm font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-900'}`}>💊 Daftar Komposisi Obat dalam Kapsul (Multi-Obat)</label>
                   <button type="button" onClick={tambahBarisObatKapsul} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">
                     + Tambah Obat Lain
                   </button>
@@ -1101,22 +1101,39 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                           )}
                         </div>
 
-                        {/* Searchbox Master Obat untuk Baris Ini */}
+                        {/* Searchbox Master Obat dengan style yang konsisten */}
                         <div className="relative">
                           <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>🔍 Cari Master Obat (Ketik untuk Filter)</label>
-                          <input
-                            type="text"
-                            value={searchVal}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              updateBarisObatKapsul(item.id, 'pencarianMaster', val);
-                              updateBarisObatKapsul(item.id, 'isDropdownOpen', true);
-                              updateBarisObatKapsul(item.id, 'nama', val);
-                            }}
-                            onFocus={() => updateBarisObatKapsul(item.id, 'isDropdownOpen', true)}
-                            placeholder="Ketik nama obat (contoh: Paracetamol)..."
-                            className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'} border rounded-lg text-xs font-semibold outline-none shadow-sm`}
-                          />
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={searchVal}
+                              onChange={(e) => {
+                                const val = e.target.value;
+                                updateBarisObatKapsul(item.id, 'pencarianMaster', val);
+                                updateBarisObatKapsul(item.id, 'isDropdownOpen', true);
+                                updateBarisObatKapsul(item.id, 'nama', val);
+                                if (val === '') {
+                                  updateBarisObatKapsul(item.id, 'masterId', '');
+                                }
+                              }}
+                              onFocus={() => updateBarisObatKapsul(item.id, 'isDropdownOpen', true)}
+                              placeholder="Ketik nama obat (contoh: Paracetamol)..."
+                              className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-900 placeholder-slate-400'} border rounded-lg text-xs font-semibold outline-none shadow-sm`}
+                            />
+                            {searchVal && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setDaftarObatKapsul((prev) => prev.map((i) => (i.id === item.id ? { ...i, masterId: '', nama: '', pencarianMaster: '', kandunganTablet: '', isDropdownOpen: false } : i)));
+                                }}
+                                className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${isDarkMode ? 'bg-slate-800 text-slate-300' : 'bg-slate-100 text-slate-400'} text-xs font-bold px-1.5 py-0.5 rounded-md`}
+                                title="Reset Pilihan"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
 
                           {item.isDropdownOpen && (
                             <div
@@ -1157,17 +1174,6 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                               )}
                             </div>
                           )}
-                        </div>
-
-                        <div>
-                          <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Nama Obat (Manual / Terisi)</label>
-                          <input
-                            type="text"
-                            value={item.nama}
-                            onChange={(e) => updateBarisObatKapsul(item.id, 'nama', e.target.value)}
-                            placeholder="Contoh: Paracetamol..."
-                            className={`w-full p-2.5 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-900'} border rounded-lg text-xs font-medium outline-none`}
-                          />
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
