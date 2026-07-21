@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 
 // --- BAGIAN RUMUS ---
 const hitungDosisYoung = (umur: number, dosisDewasa: number): number => (umur / (umur + 12)) * dosisDewasa;
