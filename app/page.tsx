@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, FormEvent } from 'react';
 const hitungDosisYoung = (umur: number, dosisDewasa: number): number => (umur / (umur + 12)) * dosisDewasa;
 const hitungDosisBB = (beratBadan: number, dosisPerKg: number): number => beratBadan * dosisPerKg;
 const hitungVolumeSirup = (permintaan: number, sediaan: number, volume: number): number => (permintaan / sediaan) * volume;
+const hitungVolumeInjeksi = (permintaan: number, sediaan: number, volume: number): number => (permintaan / sediaan) * volume;
 const hitungTabletPuyer = (dosisBungkus: number, jmlBungkus: number, dosisTablet: number): number => (dosisBungkus * jmlBungkus) / dosisTablet;
 const hitungTPM = (volume: number, waktuJam: number, faktorTetes: number): number => (volume * faktorTetes) / (waktuJam * 60);
 
@@ -64,7 +65,7 @@ const DATABASE_INTERAKSI: { obat1: string; obat2: string; tingkat: 'Major' | 'Mo
   { obat1: '8', obat2: '7', tingkat: 'Moderate', deskripsi: 'Erythromycin dan Azithromycin (sesama makrolid) dapat meningkatkan risiko gangguan irama jantung.' },
 ];
 
-type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'kapsul' | 'quiz';
+type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'injeksi' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'kapsul' | 'quiz';
 type SoalQuiz = { beratBadan: number; dosisPerKg: number; jawabanBenar: number };
 
 type KapsulItem = {
@@ -93,6 +94,7 @@ const TAB_LIST: { id: TabType; label: string }[] = [
   { id: 'umur', label: 'Umur' },
   { id: 'sirup', label: 'Sirup' },
   { id: 'puyer', label: 'Puyer' },
+  { id: 'injeksi', label: 'Injeksi' },
   { id: 'tpm', label: 'Infus' },
   { id: 'bsa', label: 'BSA' },
   { id: 'ginjal', label: 'Ginjal' },
@@ -120,50 +122,59 @@ export default function KalkulatorFarmasi() {
   const [pencarianObat, setPencarianObat] = useState<string>('');
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
 
+  // State Parameter Dasar
   const [umur, setUmur] = useState<string>('');
   const [dosisDewasa, setDosisDewasa] = useState<string>('');
   const [beratBadan, setBeratBadan] = useState<string>('');
   const [dosisPerKg, setDosisPerKg] = useState<string>('');
 
+  // State Sirup
   const [dosisPermintaan, setDosisPermintaan] = useState<string>('');
   const [dosisSediaan, setDosisSediaan] = useState<string>('');
   const [volumeSediaan, setVolumeSediaan] = useState<string>('');
 
+  // State Injeksi (IV/IM)
+  const [mintaInjeksi, setMintaInjeksi] = useState<string>('');
+  const [sediaInjeksi, setSediaInjeksi] = useState<string>('');
+  const [volPelarutInjeksi, setVolPelarutInjeksi] = useState<string>('');
+
+  // State Puyer
   const [dosisPerBungkus, setDosisPerBungkus] = useState<string>('');
   const [jumlahBungkus, setJumlahBungkus] = useState<string>('');
   const [dosisTablet, setDosisTablet] = useState<string>('');
 
+  // State Infus TPM
   const [volumeInfus, setVolumeInfus] = useState<string>('');
   const [waktuInfus, setWaktuInfus] = useState<string>('');
   const [faktorTetes, setFaktorTetes] = useState<string>('20');
 
-  // State untuk kalkulator BSA (Luas Permukaan Tubuh)
+  // State BSA
   const [tinggiBSA, setTinggiBSA] = useState<string>('');
   const [beratBSA, setBeratBSA] = useState<string>('');
   const [dosisPerM2, setDosisPerM2] = useState<string>('');
 
-  // State untuk kalkulator Fungsi Ginjal (CrCl)
+  // State CrCl (Ginjal)
   const [umurGinjal, setUmurGinjal] = useState<string>('');
   const [beratGinjal, setBeratGinjal] = useState<string>('');
   const [serumKreatinin, setSerumKreatinin] = useState<string>('');
   const [jenisKelaminGinjal, setJenisKelaminGinjal] = useState<'laki' | 'perempuan'>('laki');
 
-  // State untuk kalkulator Syringe Pump (Vasoaktif)
+  // State Syringe Pump
   const [beratSyringe, setBeratSyringe] = useState<string>('');
   const [dosisSyringe, setDosisSyringe] = useState<string>('');
   const [massaObatSyringe, setMassaObatSyringe] = useState<string>('4');
   const [volumeSpuit, setVolumeSpuit] = useState<string>('50');
 
-  // State untuk Interaksi Obat
+  // State Interaksi Obat
   const [obatInteraksiA, setObatInteraksiA] = useState<string>('');
   const [obatInteraksiB, setObatInteraksiB] = useState<string>('');
 
-  // State untuk Kalkulator Kapsul Racikan Multi-Obat
+  // State Kapsul Racikan Multi-Obat
   const [daftarObatKapsul, setDaftarObatKapsul] = useState<KapsulItem[]>([{ id: '1', masterId: '', nama: '', dosisPerKapsul: '', kandunganTablet: '', pencarianMaster: '', isDropdownOpen: false }]);
   const [jumlahKapsul, setJumlahKapsul] = useState<string>('');
   const [bobotTargetKapsul, setBobotTargetKapsul] = useState<string>('');
 
-  // State untuk Generator Etiket Resep
+  // State Generator Etiket
   const [frekuensiEtiket, setFrekuensiEtiket] = useState<string>('3 kali sehari');
   const [aturanMakanEtiket, setAturanMakanEtiket] = useState<string>('Sesudah Makan');
   const [catatanEtiket, setCatatanEtiket] = useState<string>('');
@@ -209,6 +220,8 @@ export default function KalkulatorFarmasi() {
       setDosisSediaan('');
       setVolumeSediaan('');
       setDosisTablet('');
+      setSediaInjeksi('');
+      setVolPelarutInjeksi('');
       setIsDropdownOpen(false);
       return;
     }
@@ -219,12 +232,16 @@ export default function KalkulatorFarmasi() {
 
     setDosisPerKg(obat.dosisPerKg.toString());
     setDosisDewasa(obat.dosisDewasa.toString());
+
+    // Autofill untuk sirup & injeksi
     setDosisSediaan(obat.sediaanMg.toString());
     setVolumeSediaan(obat.sediaanMl.toString());
+    setSediaInjeksi(obat.sediaanMg.toString());
+    setVolPelarutInjeksi(obat.sediaanMl.toString());
+
     setDosisTablet(obat.dosisDewasa.toString());
   };
 
-  // Handler untuk baris obat kapsul
   const tambahBarisObatKapsul = () => {
     setDaftarObatKapsul((prev) => [...prev, { id: Date.now().toString(), masterId: '', nama: '', dosisPerKapsul: '', kandunganTablet: '', pencarianMaster: '', isDropdownOpen: false }]);
   };
@@ -271,6 +288,10 @@ export default function KalkulatorFarmasi() {
       setDosisPermintaan(p.dosisPermintaan);
       setDosisSediaan(p.dosisSediaan);
       setVolumeSediaan(p.volumeSediaan);
+    } else if (item.tipeTab === 'injeksi') {
+      setMintaInjeksi(p.mintaInjeksi);
+      setSediaInjeksi(p.sediaInjeksi);
+      setVolPelarutInjeksi(p.volPelarutInjeksi);
     } else if (item.tipeTab === 'puyer') {
       setDosisPerBungkus(p.dosisPerBungkus);
       setJumlahBungkus(p.jumlahBungkus);
@@ -355,6 +376,16 @@ export default function KalkulatorFarmasi() {
       hasil = hitungVolumeSirup(nMinta, nSedia, nVol);
     } else if (dosisPermintaan !== '' || dosisSediaan !== '' || volumeSediaan !== '') {
       errorMsg = 'Mohon lengkapi data sirup dengan angka yang valid (> 0).';
+    }
+  } else if (activeTab === 'injeksi') {
+    satuanHasil = 'ml';
+    const nMinta = parseFloat(mintaInjeksi);
+    const nSedia = parseFloat(sediaInjeksi);
+    const nVol = parseFloat(volPelarutInjeksi);
+    if (!isNaN(nMinta) && !isNaN(nSedia) && !isNaN(nVol) && nSedia > 0 && nVol > 0) {
+      hasil = hitungVolumeInjeksi(nMinta, nSedia, nVol);
+    } else if (mintaInjeksi !== '' || sediaInjeksi !== '' || volPelarutInjeksi !== '') {
+      errorMsg = 'Mohon lengkapi data injeksi dengan angka yang valid (> 0).';
     }
   } else if (activeTab === 'puyer') {
     satuanHasil = 'mg';
@@ -497,6 +528,10 @@ export default function KalkulatorFarmasi() {
         labelTipe = 'Sirup Cair';
         detail = `Minta: ${dosisPermintaan}mg | Sedia: ${dosisSediaan}mg/${volumeSediaan}ml`;
         payload = { dosisPermintaan, dosisSediaan, volumeSediaan, pilihanObat };
+      } else if (activeTab === 'injeksi') {
+        labelTipe = 'Injeksi (IV/IM)';
+        detail = `Minta: ${mintaInjeksi}mg | Sedia: ${sediaInjeksi}mg/${volPelarutInjeksi}ml`;
+        payload = { mintaInjeksi, sediaInjeksi, volPelarutInjeksi, pilihanObat };
       } else if (activeTab === 'puyer') {
         labelTipe = 'Racik Puyer';
         detail = `${jumlahBungkus}bks @${dosisPerBungkus}mg | Tab: ${dosisTablet}mg`;
@@ -524,7 +559,7 @@ export default function KalkulatorFarmasi() {
         detail = `Obat A: ${namaA} vs Obat B: ${namaB}`;
         payload = { obatInteraksiA, obatInteraksiB };
       } else if (activeTab === 'kapsul') {
-        labelTipe = 'Kapsul Racikan Multi-Obat';
+        labelTipe = 'Kapsul Racikan';
         detail = `${jumlahKapsul} kapsul | ${daftarObatKapsul.length} macam obat`;
         const cleanKapsul = daftarObatKapsul.map(({ pencarianMaster, isDropdownOpen, ...rest }) => rest);
         payload = {
@@ -567,6 +602,9 @@ export default function KalkulatorFarmasi() {
     dosisPermintaan,
     dosisSediaan,
     volumeSediaan,
+    mintaInjeksi,
+    sediaInjeksi,
+    volPelarutInjeksi,
     dosisPerBungkus,
     jumlahBungkus,
     dosisTablet,
@@ -602,7 +640,7 @@ export default function KalkulatorFarmasi() {
     setStatusQuiz(jawabanAngka === soalQuiz.jawabanBenar ? 'benar' : 'salah');
   };
 
-  const butuhPilihanObat = activeTab === 'bb' || activeTab === 'umur' || activeTab === 'sirup' || activeTab === 'puyer';
+  const butuhPilihanObat = activeTab === 'bb' || activeTab === 'umur' || activeTab === 'sirup' || activeTab === 'injeksi' || activeTab === 'puyer';
 
   const filteredMasterObat = MASTER_OBAT.filter((obat) => obat.nama.toLowerCase().includes(pencarianObat.toLowerCase()) || obat.kategori.toLowerCase().includes(pencarianObat.toLowerCase()));
 
@@ -651,8 +689,8 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
           <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mt-1 font-medium`}>Asisten Perhitungan Farmasi & Klinis</p>
         </header>
 
-        {/* --- TAB NAVIGASI --- */}
-        <div className={`grid grid-cols-4 sm:grid-cols-11 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
+        {/* --- TAB NAVIGASI (Dengan susunan baru untuk 12 tab) --- */}
+        <div className={`grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
           {TAB_LIST.map((tab) => (
             <button
               key={tab.id}
@@ -811,6 +849,48 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                     />
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* TAB BARU: INJEKSI */}
+            {activeTab === 'injeksi' && (
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Dosis Obat yang Diminta (mg / mcg)</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    value={mintaInjeksi}
+                    onChange={(e) => setMintaInjeksi(e.target.value)}
+                    className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                    placeholder="Contoh: 250"
+                  />
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Sediaan Vial/Ampul (mg / mcg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={sediaInjeksi}
+                      onChange={(e) => setSediaInjeksi(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 1000"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Volume Pelarut (ml)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={volPelarutInjeksi}
+                      onChange={(e) => setVolPelarutInjeksi(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 10"
+                    />
+                  </div>
+                </div>
+                <p className={`text-[11px] ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} italic`}>*Pastikan satuan dosis yang diminta sama dengan satuan dosis sediaan (contoh: sama-sama dalam satuan mg).</p>
               </div>
             )}
 
@@ -1079,7 +1159,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
             {activeTab === 'kapsul' && (
               <div className="space-y-4">
                 <div className="flex justify-between items-center">
-                  <label className={`block text-sm font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-900'}`}>💊 Daftar Komposisi Obat dalam Kapsul (Multi-Obat)</label>
+                  <label className={`block text-sm font-bold ${isDarkMode ? 'text-indigo-300' : 'text-indigo-900'}`}>💊 Daftar Komposisi Obat dalam Kapsul</label>
                   <button type="button" onClick={tambahBarisObatKapsul} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition-colors shadow-sm">
                     + Tambah Obat Lain
                   </button>
@@ -1101,7 +1181,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                           )}
                         </div>
 
-                        {/* Searchbox Master Obat dengan style yang konsisten */}
+                        {/* Searchbox Master Obat */}
                         <div className="relative">
                           <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>🔍 Cari Master Obat (Ketik untuk Filter)</label>
                           <div className="relative">
@@ -1319,19 +1399,21 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                   ? 'Ambil & Gerus'
                   : activeTab === 'sirup'
                     ? 'Berikan Sebanyak'
-                    : activeTab === 'tpm'
-                      ? 'Kecepatan Tetesan'
-                      : activeTab === 'bsa'
-                        ? 'Dosis Total Berdasarkan BSA'
-                        : activeTab === 'ginjal'
-                          ? 'Estimasi Klirens Kreatinin (CrCl)'
-                          : activeTab === 'syringe'
-                            ? 'Kecepatan Syringe Pump'
-                            : activeTab === 'interaksi'
-                              ? 'Status Interaksi Obat'
-                              : activeTab === 'kapsul'
-                                ? 'Total Zat Aktif per Kapsul'
-                                : 'Dosis Sekali Minum'}
+                    : activeTab === 'injeksi'
+                      ? 'Ambil & Suntikkan (Spuit)'
+                      : activeTab === 'tpm'
+                        ? 'Kecepatan Tetesan'
+                        : activeTab === 'bsa'
+                          ? 'Dosis Total Berdasarkan BSA'
+                          : activeTab === 'ginjal'
+                            ? 'Estimasi Klirens Kreatinin (CrCl)'
+                            : activeTab === 'syringe'
+                              ? 'Kecepatan Syringe Pump'
+                              : activeTab === 'interaksi'
+                                ? 'Status Interaksi Obat'
+                                : activeTab === 'kapsul'
+                                  ? 'Total Zat Aktif per Kapsul'
+                                  : 'Dosis Sekali Minum'}
               </p>
               <p className="text-5xl font-black tracking-tight">
                 {activeTab === 'interaksi' ? interaksiResult?.tingkat : Number.isInteger(hasil) ? hasil : hasil.toFixed(2)}
