@@ -33,27 +33,61 @@ const hitungSyringePump = (berat: number, dosisMcgKgMin: number, massaMg: number
   return mcgPerJam / mcgPerMl;
 };
 
-// --- MASTER DATA OBAT ---
+// --- MASTER DATA OBAT (DIPERLUAS MENJADI 40+ OBAT) ---
 const MASTER_OBAT = [
+  // Oral - Analgesik & NSAID
   { id: '1', kategori: 'Analgesik & Antipiretik', nama: 'Paracetamol', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 500, sediaanMg: 120, sediaanMl: 5 },
-  { id: '2', kategori: 'Analgesik & Antipiretik', nama: 'Ibuprofen', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 400, sediaanMg: 100, sediaanMl: 5 },
-  { id: '3', kategori: 'Analgesik & Antipiretik', nama: 'Asam Mefenamat', dosisPerKg: 6.5, maxDosisKg: 10, dosisDewasa: 500, sediaanMg: 50, sediaanMl: 5 },
+  { id: '2', kategori: 'Analgesik & NSAID', nama: 'Ibuprofen', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 400, sediaanMg: 100, sediaanMl: 5 },
+  { id: '3', kategori: 'Analgesik & NSAID', nama: 'Asam Mefenamat', dosisPerKg: 6.5, maxDosisKg: 10, dosisDewasa: 500, sediaanMg: 50, sediaanMl: 5 },
+  { id: '36', kategori: 'Analgesik & NSAID', nama: 'Meloxicam', dosisPerKg: 0.125, maxDosisKg: 0.25, dosisDewasa: 15, sediaanMg: 15, sediaanMl: 1 },
+  { id: '35', kategori: 'Sendi & Otot (Asam Urat)', nama: 'Allopurinol', dosisPerKg: 3, maxDosisKg: 5, dosisDewasa: 100, sediaanMg: 100, sediaanMl: 1 },
+
+  // Oral - Antibiotik
   { id: '4', kategori: 'Antibiotik', nama: 'Amoxicillin', dosisPerKg: 15, maxDosisKg: 30, dosisDewasa: 500, sediaanMg: 125, sediaanMl: 5 },
   { id: '5', kategori: 'Antibiotik', nama: 'Cefadroxil', dosisPerKg: 15, maxDosisKg: 30, dosisDewasa: 500, sediaanMg: 125, sediaanMl: 5 },
   { id: '6', kategori: 'Antibiotik', nama: 'Cefixime', dosisPerKg: 1.5, maxDosisKg: 3, dosisDewasa: 100, sediaanMg: 100, sediaanMl: 5 },
   { id: '7', kategori: 'Antibiotik', nama: 'Azithromycin', dosisPerKg: 10, maxDosisKg: 15, dosisDewasa: 500, sediaanMg: 200, sediaanMl: 5 },
   { id: '8', kategori: 'Antibiotik', nama: 'Erythromycin', dosisPerKg: 12.5, maxDosisKg: 25, dosisDewasa: 500, sediaanMg: 200, sediaanMl: 5 },
+  { id: '37', kategori: 'Antibiotik', nama: 'Ciprofloxacin', dosisPerKg: 10, maxDosisKg: 15, dosisDewasa: 500, sediaanMg: 500, sediaanMl: 1 },
+  { id: '39', kategori: 'Antibiotik', nama: 'Levofloxacin', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 500, sediaanMg: 500, sediaanMl: 1 },
+
+  // Oral - Antihistamin & Pernapasan
   { id: '9', kategori: 'Antihistamin (Alergi)', nama: 'Cetirizine', dosisPerKg: 0.25, maxDosisKg: 0.5, dosisDewasa: 10, sediaanMg: 5, sediaanMl: 5 },
   { id: '10', kategori: 'Antihistamin (Alergi)', nama: 'Loratadine', dosisPerKg: 0.2, maxDosisKg: 0.4, dosisDewasa: 10, sediaanMg: 5, sediaanMl: 5 },
   { id: '11', kategori: 'Antihistamin (Alergi)', nama: 'Chlorpheniramine (CTM)', dosisPerKg: 0.08, maxDosisKg: 0.15, dosisDewasa: 4, sediaanMg: 2, sediaanMl: 5 },
   { id: '12', kategori: 'Pernapasan (Batuk/Asma)', nama: 'Ambroxol', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 30, sediaanMg: 15, sediaanMl: 5 },
   { id: '13', kategori: 'Pernapasan (Batuk/Asma)', nama: 'Bromhexine', dosisPerKg: 0.3, maxDosisKg: 0.6, dosisDewasa: 8, sediaanMg: 4, sediaanMl: 5 },
   { id: '14', kategori: 'Pernapasan (Batuk/Asma)', nama: 'Salbutamol', dosisPerKg: 0.1, maxDosisKg: 0.2, dosisDewasa: 4, sediaanMg: 2, sediaanMl: 5 },
+
+  // Oral - Pencernaan
   { id: '15', kategori: 'Pencernaan (Lambung/Mual)', nama: 'Domperidone', dosisPerKg: 0.25, maxDosisKg: 0.5, dosisDewasa: 10, sediaanMg: 5, sediaanMl: 5 },
   { id: '16', kategori: 'Pencernaan (Lambung/Mual)', nama: 'Ondansetron', dosisPerKg: 0.15, maxDosisKg: 0.3, dosisDewasa: 8, sediaanMg: 4, sediaanMl: 5 },
   { id: '17', kategori: 'Pencernaan (Lambung/Mual)', nama: 'Ranitidine', dosisPerKg: 2, maxDosisKg: 4, dosisDewasa: 150, sediaanMg: 75, sediaanMl: 5 },
+  { id: '38', kategori: 'Pencernaan (Spasmolitik)', nama: 'Hyoscine Butylbromide (Buscopan)', dosisPerKg: 0.3, maxDosisKg: 0.5, dosisDewasa: 10, sediaanMg: 10, sediaanMl: 1 },
+
+  // Oral - Kortikosteroid
   { id: '18', kategori: 'Kortikosteroid', nama: 'Dexamethasone', dosisPerKg: 0.1, maxDosisKg: 0.3, dosisDewasa: 0.5, sediaanMg: 0.5, sediaanMl: 5 },
   { id: '19', kategori: 'Kortikosteroid', nama: 'Methylprednisolone', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 4, sediaanMg: 4, sediaanMl: 5 },
+
+  // Oral - Kardiovaskular & Endokrin
+  { id: '31', kategori: 'Kardiovaskular (Antihipertensi)', nama: 'Amlodipine', dosisPerKg: 0.1, maxDosisKg: 0.2, dosisDewasa: 5, sediaanMg: 5, sediaanMl: 1 },
+  { id: '32', kategori: 'Kardiovaskular (Antihipertensi)', nama: 'Captopril', dosisPerKg: 0.3, maxDosisKg: 1, dosisDewasa: 12.5, sediaanMg: 12.5, sediaanMl: 1 },
+  { id: '33', kategori: 'Endokrin (Antidiabetes)', nama: 'Metformin', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 500, sediaanMg: 500, sediaanMl: 1 },
+  { id: '34', kategori: 'Kardiovaskular (Anti-Kolesterol)', nama: 'Simvastatin', dosisPerKg: 0.2, maxDosisKg: 0.5, dosisDewasa: 20, sediaanMg: 20, sediaanMl: 1 },
+
+  // --- OBAT INJEKSI (IV/IM) ---
+  { id: '20', kategori: 'Injeksi (Antibiotik)', nama: 'Ceftriaxone Injeksi', dosisPerKg: 50, maxDosisKg: 100, dosisDewasa: 1000, sediaanMg: 1000, sediaanMl: 10 },
+  { id: '21', kategori: 'Injeksi (Analgesik)', nama: 'Ketorolac Injeksi', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 30, sediaanMg: 30, sediaanMl: 1 },
+  { id: '22', kategori: 'Injeksi (Lambung)', nama: 'Omeprazole Injeksi', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 40, sediaanMg: 40, sediaanMl: 10 },
+  { id: '23', kategori: 'Injeksi (Lambung)', nama: 'Pantoprazole Injeksi', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 40, sediaanMg: 40, sediaanMl: 10 },
+  { id: '24', kategori: 'Injeksi (Diuretik)', nama: 'Furosemide Injeksi', dosisPerKg: 1, maxDosisKg: 2, dosisDewasa: 40, sediaanMg: 20, sediaanMl: 2 },
+  { id: '25', kategori: 'Injeksi (Anti-Mual)', nama: 'Ondansetron Injeksi', dosisPerKg: 0.15, maxDosisKg: 0.3, dosisDewasa: 8, sediaanMg: 4, sediaanMl: 2 },
+  { id: '40', kategori: 'Injeksi (Spasmolitik)', nama: 'Hyoscine Injeksi (Buscopan)', dosisPerKg: 0.3, maxDosisKg: 0.5, dosisDewasa: 20, sediaanMg: 20, sediaanMl: 1 },
+  { id: '26', kategori: 'Injeksi (Saraf/Anti-Kejang)', nama: 'Diazepam Injeksi', dosisPerKg: 0.3, maxDosisKg: 0.5, dosisDewasa: 5, sediaanMg: 10, sediaanMl: 2 },
+  { id: '27', kategori: 'Injeksi (Kortikosteroid)', nama: 'Dexamethasone Injeksi', dosisPerKg: 0.1, maxDosisKg: 0.3, dosisDewasa: 5, sediaanMg: 5, sediaanMl: 1 },
+  { id: '28', kategori: 'Injeksi (Antihistamin)', nama: 'Diphenhydramine Injeksi', dosisPerKg: 1, maxDosisKg: 1.25, dosisDewasa: 10, sediaanMg: 10, sediaanMl: 1 },
+  { id: '29', kategori: 'Injeksi (Emergensi/Vasoaktif)', nama: 'Epinephrine Injeksi', dosisPerKg: 0.01, maxDosisKg: 0.01, dosisDewasa: 0.3, sediaanMg: 1, sediaanMl: 1 },
+  { id: '30', kategori: 'Injeksi (Emergensi/Vasoaktif)', nama: 'Norepinephrine Injeksi', dosisPerKg: 0.01, maxDosisKg: 0.05, dosisDewasa: 4, sediaanMg: 4, sediaanMl: 4 },
 ];
 
 // Database Interaksi Obat Sederhana
@@ -63,6 +97,16 @@ const DATABASE_INTERAKSI: { obat1: string; obat2: string; tingkat: 'Major' | 'Mo
   { obat1: '2', obat2: '18', tingkat: 'Moderate', deskripsi: 'Ibuprofen dan Dexamethasone bila digunakan bersama meningkatkan risiko iritasi lambung serta perdarahan gastrointestinal.' },
   { obat1: '3', obat2: '18', tingkat: 'Moderate', deskripsi: 'Asam Mefenamat dan Dexamethasone meningkatkan risiko efek samping gastrointestinal.' },
   { obat1: '8', obat2: '7', tingkat: 'Moderate', deskripsi: 'Erythromycin dan Azithromycin (sesama makrolid) dapat meningkatkan risiko gangguan irama jantung.' },
+  // Interaksi Baru Ditambahkan
+  {
+    obat1: '31',
+    obat2: '34',
+    tingkat: 'Moderate',
+    deskripsi: 'Amlodipine dapat meningkatkan kadar Simvastatin dalam darah, yang meningkatkan risiko miopati dan rhabdomyolysis. Dosis Simvastatin disarankan maks 20 mg/hari jika digunakan bersamaan.',
+  },
+  { obat1: '37', obat2: '2', tingkat: 'Moderate', deskripsi: 'NSAID (Ibuprofen) dapat berinteraksi dengan Antibiotik Fluorokuinolon (Ciprofloxacin) dan berpotensi meningkatkan risiko stimulasi SSP serta kejang.' },
+  { obat1: '37', obat2: '3', tingkat: 'Moderate', deskripsi: 'NSAID (Asam Mefenamat) dapat berinteraksi dengan Antibiotik Fluorokuinolon (Ciprofloxacin) dan berpotensi meningkatkan risiko kejang.' },
+  { obat1: '32', obat2: '33', tingkat: 'Moderate', deskripsi: 'ACE inhibitor (Captopril) dapat meningkatkan efek penurunan glukosa dari Metformin, meningkatkan risiko hipoglikemia.' },
 ];
 
 type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'injeksi' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'kapsul' | 'quiz';
@@ -689,7 +733,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
           <p className={`text-sm ${isDarkMode ? 'text-slate-400' : 'text-slate-500'} mt-1 font-medium`}>Asisten Perhitungan Farmasi & Klinis</p>
         </header>
 
-        {/* --- TAB NAVIGASI (Dengan susunan baru untuk 12 tab) --- */}
+        {/* --- TAB NAVIGASI --- */}
         <div className={`grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
           {TAB_LIST.map((tab) => (
             <button
@@ -852,7 +896,6 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
               </div>
             )}
 
-            {/* TAB BARU: INJEKSI */}
             {activeTab === 'injeksi' && (
               <div className="space-y-4">
                 <div>
