@@ -14,6 +14,24 @@ const hitungBSA = (tinggiCm: number, beratKg: number): number => {
   return Math.sqrt((tinggiCm * beratKg) / 3600);
 };
 
+// Rumus Cockcroft-Gault untuk Klirens Kreatinin (CrCl ml/min)
+const hitungCrCl = (umur: number, beratKg: number, serumKreatinin: number, jenisKelamin: 'laki' | 'perempuan'): number => {
+  if (serumKreatinin <= 0) return 0;
+  let crcl = ((140 - umur) * beratKg) / (72 * serumKreatinin);
+  if (jenisKelamin === 'perempuan') {
+    crcl *= 0.85;
+  }
+  return crcl;
+};
+
+// Rumus Syringe Pump Vasoaktif (ml/jam)
+const hitungSyringePump = (berat: number, dosisMcgKgMin: number, massaMg: number, volMl: number): number => {
+  if (massaMg <= 0 || volMl <= 0) return 0;
+  const mcgPerJam = dosisMcgKgMin * berat * 60;
+  const mcgPerMl = (massaMg * 1000) / volMl;
+  return mcgPerJam / mcgPerMl;
+};
+
 // --- MASTER DATA OBAT ---
 const MASTER_OBAT = [
   { id: '1', kategori: 'Analgesik & Antipiretik', nama: 'Paracetamol', dosisPerKg: 10, maxDosisKg: 20, dosisDewasa: 500, sediaanMg: 120, sediaanMl: 5 },
@@ -37,7 +55,16 @@ const MASTER_OBAT = [
   { id: '19', kategori: 'Kortikosteroid', nama: 'Methylprednisolone', dosisPerKg: 0.5, maxDosisKg: 1, dosisDewasa: 4, sediaanMg: 4, sediaanMl: 5 },
 ];
 
-type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'quiz';
+// Database Interaksi Obat Sederhana
+const DATABASE_INTERAKSI: { obat1: string; obat2: string; tingkat: 'Major' | 'Moderate'; deskripsi: string }[] = [
+  { obat1: '2', obat2: '3', tingkat: 'Major', deskripsi: 'Ibuprofen dan Asam Mefenamat sama-sama golongan NSAID. Penggunaan bersamaan meningkatkan risiko perdarahan saluran cerna, tukak lambung, dan nefrotoksisitas secara signifikan.' },
+  { obat1: '8', obat2: '15', tingkat: 'Major', deskripsi: 'Erythromycin dan Domperidone dapat meningkatkan risiko perpanjangan interval QT dan aritmia jantung serius (torsades de pointes).' },
+  { obat1: '2', obat2: '18', tingkat: 'Moderate', deskripsi: 'Ibuprofen dan Dexamethasone bila digunakan bersama meningkatkan risiko iritasi lambung serta perdarahan gastrointestinal.' },
+  { obat1: '3', obat2: '18', tingkat: 'Moderate', deskripsi: 'Asam Mefenamat dan Dexamethasone meningkatkan risiko efek samping gastrointestinal.' },
+  { obat1: '8', obat2: '7', tingkat: 'Moderate', deskripsi: 'Erythromycin dan Azithromycin (sesama makrolid) dapat meningkatkan risiko gangguan irama jantung.' },
+];
+
+type TabType = 'bb' | 'umur' | 'sirup' | 'puyer' | 'tpm' | 'bsa' | 'ginjal' | 'syringe' | 'interaksi' | 'quiz';
 type SoalQuiz = { beratBadan: number; dosisPerKg: number; jawabanBenar: number };
 
 type RiwayatItem = {
@@ -58,6 +85,9 @@ const TAB_LIST: { id: TabType; label: string }[] = [
   { id: 'puyer', label: 'Puyer' },
   { id: 'tpm', label: 'Infus' },
   { id: 'bsa', label: 'BSA (Luas Tubuh)' },
+  { id: 'ginjal', label: 'Fungsi Ginjal' },
+  { id: 'syringe', label: 'Syringe' },
+  { id: 'interaksi', label: 'Interaksi' },
   { id: 'quiz', label: 'Kuis' },
 ];
 
@@ -100,6 +130,22 @@ export default function KalkulatorFarmasi() {
   const [tinggiBSA, setTinggiBSA] = useState<string>('');
   const [beratBSA, setBeratBSA] = useState<string>('');
   const [dosisPerM2, setDosisPerM2] = useState<string>('');
+
+  // State untuk kalkulator Fungsi Ginjal (CrCl)
+  const [umurGinjal, setUmurGinjal] = useState<string>('');
+  const [beratGinjal, setBeratGinjal] = useState<string>('');
+  const [serumKreatinin, setSerumKreatinin] = useState<string>('');
+  const [jenisKelaminGinjal, setJenisKelaminGinjal] = useState<'laki' | 'perempuan'>('laki');
+
+  // State untuk kalkulator Syringe Pump (Vasoaktif)
+  const [beratSyringe, setBeratSyringe] = useState<string>('');
+  const [dosisSyringe, setDosisSyringe] = useState<string>('');
+  const [massaObatSyringe, setMassaObatSyringe] = useState<string>('4');
+  const [volumeSpuit, setVolumeSpuit] = useState<string>('50');
+
+  // State untuk Interaksi Obat
+  const [obatInteraksiA, setObatInteraksiA] = useState<string>('');
+  const [obatInteraksiB, setObatInteraksiB] = useState<string>('');
 
   // State untuk Generator Etiket Resep
   const [frekuensiEtiket, setFrekuensiEtiket] = useState<string>('3 kali sehari');
@@ -206,6 +252,19 @@ export default function KalkulatorFarmasi() {
       setTinggiBSA(p.tinggiBSA);
       setBeratBSA(p.beratBSA);
       setDosisPerM2(p.dosisPerM2);
+    } else if (item.tipeTab === 'ginjal') {
+      setUmurGinjal(p.umurGinjal);
+      setBeratGinjal(p.beratGinjal);
+      setSerumKreatinin(p.serumKreatinin);
+      setJenisKelaminGinjal(p.jenisKelaminGinjal as 'laki' | 'perempuan');
+    } else if (item.tipeTab === 'syringe') {
+      setBeratSyringe(p.beratSyringe);
+      setDosisSyringe(p.dosisSyringe);
+      setMassaObatSyringe(p.massaObatSyringe);
+      setVolumeSpuit(p.volumeSpuit);
+    } else if (item.tipeTab === 'interaksi') {
+      setObatInteraksiA(p.obatInteraksiA);
+      setObatInteraksiB(p.obatInteraksiB);
     }
 
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -216,6 +275,7 @@ export default function KalkulatorFarmasi() {
   let warningDosis: string | null = null;
   let errorMsg = '';
   let subInfoText = '';
+  let interaksiResult: { tingkat: 'Major' | 'Moderate' | 'Aman'; deskripsi: string } | null = null;
 
   if (activeTab === 'bb') {
     satuanHasil = 'mg';
@@ -290,6 +350,53 @@ export default function KalkulatorFarmasi() {
     } else if (tinggiBSA !== '' || beratBSA !== '') {
       errorMsg = 'Mohon isi tinggi dan berat badan dengan benar (> 0).';
     }
+  } else if (activeTab === 'ginjal') {
+    satuanHasil = 'ml/min';
+    const nUmurG = parseFloat(umurGinjal);
+    const nBeratG = parseFloat(beratGinjal);
+    const nScr = parseFloat(serumKreatinin);
+    if (!isNaN(nUmurG) && !isNaN(nBeratG) && !isNaN(nScr) && nUmurG > 0 && nBeratG > 0 && nScr > 0) {
+      hasil = hitungCrCl(nUmurG, nBeratG, nScr, jenisKelaminGinjal);
+
+      if (hasil >= 90) subInfoText = 'Fungsi Ginjal: Normal (Stage 1)';
+      else if (hasil >= 60) subInfoText = 'Fungsi Ginjal: Penurunan Ringan (Stage 2)';
+      else if (hasil >= 30) subInfoText = 'Fungsi Ginjal: Penurunan Sedang (Stage 3) - Wajib Adjust Dosis';
+      else if (hasil >= 15) subInfoText = 'Fungsi Ginjal: Penurunan Berat (Stage 4) - Wajib Adjust Dosis Berat';
+      else subInfoText = 'Fungsi Ginjal: Gagal Ginjal / ESRD (Stage 5)';
+    } else if (umurGinjal !== '' || beratGinjal !== '' || serumKreatinin !== '') {
+      errorMsg = 'Mohon lengkapi data fungsi ginjal dengan angka valid (> 0).';
+    }
+  } else if (activeTab === 'syringe') {
+    satuanHasil = 'ml/jam';
+    const nBeratS = parseFloat(beratSyringe);
+    const nDosisS = parseFloat(dosisSyringe);
+    const nMassaS = parseFloat(massaObatSyringe);
+    const nVolS = parseFloat(volumeSpuit);
+    if (!isNaN(nBeratS) && !isNaN(nDosisS) && !isNaN(nMassaS) && !isNaN(nVolS) && nBeratS > 0 && nDosisS > 0 && nMassaS > 0 && nVolS > 0) {
+      hasil = hitungSyringePump(nBeratS, nDosisS, nMassaS, nVolS);
+      const konsentrasi = (nMassaS * 1000) / nVolS;
+      subInfoText = `Konsentrasi Spuit: ${konsentrasi.toFixed(2)} mcg/ml`;
+    } else if (beratSyringe !== '' || dosisSyringe !== '' || massaObatSyringe !== '' || volumeSpuit !== '') {
+      errorMsg = 'Mohon lengkapi parameter syringe pump dengan angka valid (> 0).';
+    }
+  } else if (activeTab === 'interaksi') {
+    satuanHasil = 'status';
+    if (obatInteraksiA && obatInteraksiB) {
+      if (obatInteraksiA === obatInteraksiB) {
+        errorMsg = 'Pilih dua obat yang berbeda untuk pengecekan interaksi.';
+      } else {
+        const found = DATABASE_INTERAKSI.find((i) => (i.obat1 === obatInteraksiA && i.obat2 === obatInteraksiB) || (i.obat1 === obatInteraksiB && i.obat2 === obatInteraksiA));
+        if (found) {
+          interaksiResult = { tingkat: found.tingkat, deskripsi: found.deskripsi };
+          hasil = found.tingkat === 'Major' ? 2 : 1; // dummy indicator for result box trigger
+        } else {
+          interaksiResult = { tingkat: 'Aman', deskripsi: 'Tidak ditemukan interaksi mayor atau moderate di antara kedua obat ini dalam database referensi standar kami.' };
+          hasil = 0;
+        }
+      }
+    } else {
+      errorMsg = 'Silakan pilih kedua obat yang ingin dianalisis.';
+    }
   }
 
   useEffect(() => {
@@ -323,9 +430,23 @@ export default function KalkulatorFarmasi() {
         labelTipe = 'BSA (Luas Tubuh)';
         detail = `Tinggi: ${tinggiBSA}cm | BB: ${beratBSA}kg | Dosis: ${dosisPerM2}mg/m²`;
         payload = { tinggiBSA, beratBSA, dosisPerM2 };
+      } else if (activeTab === 'ginjal') {
+        labelTipe = 'Klirens Kreatinin (CrCl)';
+        detail = `Umur: ${umurGinjal}thn | BB: ${beratGinjal}kg | Scr: ${serumKreatinin}mg/dL | ${jenisKelaminGinjal}`;
+        payload = { umurGinjal, beratGinjal, serumKreatinin, jenisKelaminGinjal };
+      } else if (activeTab === 'syringe') {
+        labelTipe = 'Syringe Pump Vasoaktif';
+        detail = `BB: ${beratSyringe}kg | Dosis: ${dosisSyringe}mcg/kg/min | Massa: ${massaObatSyringe}mg / ${volumeSpuit}ml`;
+        payload = { beratSyringe, dosisSyringe, massaObatSyringe, volumeSpuit };
+      } else if (activeTab === 'interaksi') {
+        labelTipe = 'Interaksi Obat';
+        const namaA = MASTER_OBAT.find((o) => o.id === obatInteraksiA)?.nama || '';
+        const namaB = MASTER_OBAT.find((o) => o.id === obatInteraksiB)?.nama || '';
+        detail = `Obat A: ${namaA} vs Obat B: ${namaB}`;
+        payload = { obatInteraksiA, obatInteraksiB };
       }
 
-      const namaObat = pilihanObat && activeTab !== 'bsa' ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
+      const namaObat = pilihanObat && activeTab !== 'bsa' && activeTab !== 'ginjal' && activeTab !== 'syringe' && activeTab !== 'interaksi' ? MASTER_OBAT.find((o) => o.id === pilihanObat)?.nama : '';
       const fullDetail = namaObat ? `[${namaObat}] ${detail}` : detail;
       const signature = `${activeTab}-${fullDetail}-${formattedHasil}`;
 
@@ -336,8 +457,8 @@ export default function KalkulatorFarmasi() {
           tipeTab: activeTab,
           labelTipe,
           detail: fullDetail,
-          hasil: formattedHasil,
-          satuan: satuanHasil,
+          hasil: interaksiResult ? interaksiResult.tingkat : formattedHasil,
+          satuan: activeTab === 'interaksi' ? 'Tingkat' : satuanHasil,
           waktu: new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }),
           payload,
         };
@@ -367,6 +488,17 @@ export default function KalkulatorFarmasi() {
     tinggiBSA,
     beratBSA,
     dosisPerM2,
+    umurGinjal,
+    beratGinjal,
+    serumKreatinin,
+    jenisKelaminGinjal,
+    beratSyringe,
+    dosisSyringe,
+    massaObatSyringe,
+    volumeSpuit,
+    obatInteraksiA,
+    obatInteraksiB,
+    interaksiResult,
     pilihanObat,
     satuanHasil,
   ]);
@@ -429,7 +561,7 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
         </header>
 
         {/* --- TAB NAVIGASI --- */}
-        <div className={`grid grid-cols-4 sm:grid-cols-7 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
+        <div className={`grid grid-cols-5 sm:grid-cols-10 gap-1 p-1 ${isDarkMode ? 'bg-slate-800/80' : 'bg-slate-100'} rounded-xl mb-6`}>
           {TAB_LIST.map((tab) => (
             <button
               key={tab.id}
@@ -711,6 +843,147 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
                 </div>
               </div>
             )}
+
+            {activeTab === 'ginjal' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Umur Pasien (Tahun)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={umurGinjal}
+                      onChange={(e) => setUmurGinjal(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 55"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Berat Badan (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={beratGinjal}
+                      onChange={(e) => setBeratGinjal(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 65"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Serum Kreatinin (mg/dL)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={serumKreatinin}
+                      onChange={(e) => setSerumKreatinin(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 1.2"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Jenis Kelamin</label>
+                    <select
+                      value={jenisKelaminGinjal}
+                      onChange={(e) => setJenisKelaminGinjal(e.target.value as 'laki' | 'perempuan')}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer`}
+                    >
+                      <option value="laki">Laki-laki</option>
+                      <option value="perempuan">Perempuan (Koreksi 0.85)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'syringe' && (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Berat Pasien (kg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={beratSyringe}
+                      onChange={(e) => setBeratSyringe(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 60"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Dosis Target (mcg/kg/min)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={dosisSyringe}
+                      onChange={(e) => setDosisSyringe(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 0.1"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Jumlah Obat dlm Spuit (mg)</label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      value={massaObatSyringe}
+                      onChange={(e) => setMassaObatSyringe(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 4 (Norepi)"
+                    />
+                  </div>
+                  <div>
+                    <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Volume Total Spuit (ml)</label>
+                    <input
+                      type="number"
+                      step="1"
+                      value={volumeSpuit}
+                      onChange={(e) => setVolumeSpuit(e.target.value)}
+                      className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium`}
+                      placeholder="Contoh: 50"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'interaksi' && (
+              <div className="space-y-4">
+                <div>
+                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Pilih Obat Pertama (Obat A)</label>
+                  <select
+                    value={obatInteraksiA}
+                    onChange={(e) => setObatInteraksiA(e.target.value)}
+                    className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer`}
+                  >
+                    <option value="">-- Pilih Obat A --</option>
+                    {MASTER_OBAT.map((obat) => (
+                      <option key={`a-${obat.id}`} value={obat.id}>
+                        {obat.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className={`block text-sm font-semibold ${isDarkMode ? 'text-slate-300' : 'text-slate-700'} mb-1.5`}>Pilih Obat Kedua (Obat B)</label>
+                  <select
+                    value={obatInteraksiB}
+                    onChange={(e) => setObatInteraksiB(e.target.value)}
+                    className={`w-full p-3 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-slate-50 border-slate-200 text-slate-900'} border rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none font-medium cursor-pointer`}
+                  >
+                    <option value="">-- Pilih Obat B --</option>
+                    {MASTER_OBAT.map((obat) => (
+                      <option key={`b-${obat.id}`} value={obat.id}>
+                        {obat.nama}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -782,70 +1055,98 @@ Tanggal: ${new Date().toLocaleDateString('id-ID')}`;
         {/* --- HASIL KALKULASI DINAMIS --- */}
         {hasil !== null && errorMsg === '' && activeTab !== 'quiz' && (
           <div className="mt-8 space-y-4">
-            <div className="p-6 bg-gradient-to-br from-indigo-600 to-violet-600 rounded-2xl text-center shadow-lg shadow-indigo-200/20 text-white transform transition-all">
-              {subInfoText && <p className="text-indigo-200 font-medium mb-1 text-xs tracking-wide">{subInfoText}</p>}
+            <div
+              className={`p-6 rounded-2xl text-center shadow-lg text-white transform transition-all ${
+                activeTab === 'interaksi' && interaksiResult?.tingkat === 'Major'
+                  ? 'bg-gradient-to-br from-red-600 to-rose-700 shadow-red-200/20'
+                  : activeTab === 'interaksi' && interaksiResult?.tingkat === 'Moderate'
+                    ? 'bg-gradient-to-br from-amber-600 to-orange-600 shadow-amber-200/20'
+                    : activeTab === 'interaksi' && interaksiResult?.tingkat === 'Aman'
+                      ? 'bg-gradient-to-br from-emerald-600 to-teal-600 shadow-emerald-200/20'
+                      : 'bg-gradient-to-br from-indigo-600 to-violet-600 shadow-indigo-200/20'
+              }`}
+            >
+              {subInfoText && activeTab !== 'interaksi' && <p className="text-indigo-200 font-semibold mb-1 text-xs tracking-wide">{subInfoText}</p>}
               <p className="text-indigo-100 font-semibold mb-1 text-sm uppercase tracking-wider">
-                {activeTab === 'puyer' ? 'Ambil & Gerus' : activeTab === 'sirup' ? 'Berikan Sebanyak' : activeTab === 'tpm' ? 'Kecepatan Tetesan' : activeTab === 'bsa' ? 'Dosis Total Berdasarkan BSA' : 'Dosis Sekali Minum'}
+                {activeTab === 'puyer'
+                  ? 'Ambil & Gerus'
+                  : activeTab === 'sirup'
+                    ? 'Berikan Sebanyak'
+                    : activeTab === 'tpm'
+                      ? 'Kecepatan Tetesan'
+                      : activeTab === 'bsa'
+                        ? 'Dosis Total Berdasarkan BSA'
+                        : activeTab === 'ginjal'
+                          ? 'Estimasi Klirens Kreatinin (CrCl)'
+                          : activeTab === 'syringe'
+                            ? 'Kecepatan Syringe Pump'
+                            : activeTab === 'interaksi'
+                              ? 'Status Interaksi Obat'
+                              : 'Dosis Sekali Minum'}
               </p>
               <p className="text-5xl font-black tracking-tight">
-                {Number.isInteger(hasil) ? hasil : hasil.toFixed(2)} <span className="text-xl font-medium opacity-80">{satuanHasil}</span>
+                {activeTab === 'interaksi' ? interaksiResult?.tingkat : Number.isInteger(hasil) ? hasil : hasil.toFixed(2)}
+                {activeTab !== 'interaksi' && <span className="text-xl font-medium opacity-80">{satuanHasil}</span>}
               </p>
+              {activeTab === 'interaksi' && interaksiResult && <p className="mt-3 text-xs sm:text-sm font-medium leading-relaxed bg-black/20 p-3 rounded-xl">{interaksiResult.deskripsi}</p>}
             </div>
 
             {/* --- GENERATOR TEKS ETIKET RESEP --- */}
-            <div className={`p-5 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'} border rounded-2xl shadow-sm space-y-3`}>
-              <div className="flex justify-between items-center">
-                <h4 className={`text-xs font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} uppercase tracking-wider flex items-center gap-1.5`}>🏷️ Generator Etiket Resep Obat</h4>
-                <button type="button" onClick={handleCopyEtiket} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1">
-                  {isCopiedEtiket ? '✅ Berhasil Disalin!' : '📋 Salin Teks Etiket'}
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Frekuensi / Waktu</label>
-                  <select
-                    value={frekuensiEtiket}
-                    onChange={(e) => setFrekuensiEtiket(e.target.value)}
-                    className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs font-semibold outline-none`}
-                  >
-                    <option value="1 kali sehari">1 kali sehari</option>
-                    <option value="2 kali sehari">2 kali sehari</option>
-                    <option value="3 kali sehari">3 kali sehari</option>
-                    <option value="4 kali sehari">4 kali sehari</option>
-                    <option value="bila perlu (PRN)">Bila Perlu (PRN)</option>
-                  </select>
+            {activeTab !== 'ginjal' && activeTab !== 'syringe' && activeTab !== 'interaksi' && (
+              <div className={`p-5 ${isDarkMode ? 'bg-slate-800/60 border-slate-700' : 'bg-slate-50 border-slate-200'} border rounded-2xl shadow-sm space-y-3`}>
+                <div className="flex justify-between items-center">
+                  <h4 className={`text-xs font-bold ${isDarkMode ? 'text-slate-200' : 'text-slate-800'} uppercase tracking-wider flex items-center gap-1.5`}>🏷️ Generator Etiket Resep Obat</h4>
+                  <button type="button" onClick={handleCopyEtiket} className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-colors flex items-center gap-1">
+                    {isCopiedEtiket ? '✅ Berhasil Disalin!' : '📋 Salin Teks Etiket'}
+                  </button>
                 </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Frekuensi / Waktu</label>
+                    <select
+                      value={frekuensiEtiket}
+                      onChange={(e) => setFrekuensiEtiket(e.target.value)}
+                      className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs font-semibold outline-none`}
+                    >
+                      <option value="1 kali sehari">1 kali sehari</option>
+                      <option value="2 kali sehari">2 kali sehari</option>
+                      <option value="3 kali sehari">3 kali sehari</option>
+                      <option value="4 kali sehari">4 kali sehari</option>
+                      <option value="bila perlu (PRN)">Bila Perlu (PRN)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Aturan Makan</label>
+                    <select
+                      value={aturanMakanEtiket}
+                      onChange={(e) => setAturanMakanEtiket(e.target.value)}
+                      className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs font-semibold outline-none`}
+                    >
+                      <option value="Sesudah Makan">Sesudah Makan</option>
+                      <option value="Sebelum Makan">Sebelum Makan</option>
+                      <option value="Bersama Makan">Bersama Makan</option>
+                    </select>
+                  </div>
+                </div>
+
                 <div>
-                  <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Aturan Makan</label>
-                  <select
-                    value={aturanMakanEtiket}
-                    onChange={(e) => setAturanMakanEtiket(e.target.value)}
-                    className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs font-semibold outline-none`}
-                  >
-                    <option value="Sesudah Makan">Sesudah Makan</option>
-                    <option value="Sebelum Makan">Sebelum Makan</option>
-                    <option value="Bersama Makan">Bersama Makan</option>
-                  </select>
+                  <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Catatan Tambahan (Opsional)</label>
+                  <input
+                    type="text"
+                    value={catatanEtiket}
+                    onChange={(e) => setCatatanEtiket(e.target.value)}
+                    placeholder="Contoh: Habiskan antibiotik / Kocok dahulu..."
+                    className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs outline-none font-medium`}
+                  />
+                </div>
+
+                {/* Preview Box Etiket */}
+                <div className={`p-3 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700'} border border-dashed rounded-xl font-mono text-[11px] whitespace-pre-line leading-relaxed`}>
+                  {etiketFormattedText}
                 </div>
               </div>
-
-              <div>
-                <label className={`block text-[11px] font-semibold ${isDarkMode ? 'text-slate-400' : 'text-slate-600'} mb-1`}>Catatan Tambahan (Opsional)</label>
-                <input
-                  type="text"
-                  value={catatanEtiket}
-                  onChange={(e) => setCatatanEtiket(e.target.value)}
-                  placeholder="Contoh: Habiskan antibiotik / Kocok dahulu..."
-                  className={`w-full p-2 ${isDarkMode ? 'bg-slate-800 border-slate-700 text-white placeholder-slate-500' : 'bg-white border-slate-200 text-slate-800'} border rounded-lg text-xs outline-none font-medium`}
-                />
-              </div>
-
-              {/* Preview Box Etiket */}
-              <div className={`p-3 ${isDarkMode ? 'bg-slate-900 border-slate-700 text-slate-300' : 'bg-white border-slate-300 text-slate-700'} border border-dashed rounded-xl font-mono text-[11px] whitespace-pre-line leading-relaxed`}>
-                {etiketFormattedText}
-              </div>
-            </div>
+            )}
           </div>
         )}
 
